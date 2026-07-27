@@ -57,7 +57,7 @@ export default function PaymentForm() {
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
       // 5. Execute payment against a test API
-      const apiUrl = import.meta.env.VITE_API_URL || '/api/x402/api/search';
+      const apiUrl = '/api/proxy-search';
       const response = await fetchWithPayment(apiUrl, {
         method: 'GET'
       });

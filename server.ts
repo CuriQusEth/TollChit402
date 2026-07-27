@@ -10,17 +10,17 @@ async function startServer() {
 
   // We need to parse raw body for proxying POSTs, but wait, it's just a proxy.
   // Actually, a simpler way is to just use http.request to proxy it manually.
-  app.use("/api/x402", (req, res, next) => {
+  app.all("/api/proxy-search", (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,X-PAYMENT,PAYMENT-SIGNATURE');
+    res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE,X-PAYMENT-RESPONSE');
+
     if (req.method === 'OPTIONS') {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,X-PAYMENT,PAYMENT-SIGNATURE');
-      res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE,X-PAYMENT-RESPONSE');
       return res.status(200).end();
     }
-    
-    // Proxy the request to https://x402.direct
-    const targetUrl = new URL(req.originalUrl.replace(/^\/api\/x402/, ""), "https://x402.direct");
+
+    const targetUrl = new URL("https://x402.direct/api/search?q=test");
     
     const options = {
       hostname: targetUrl.hostname,
@@ -33,7 +33,6 @@ async function startServer() {
       },
     };
 
-    // Remove headers that could cause issues
     delete options.headers['origin'];
     delete options.headers['referer'];
     delete options.headers['connection'];
@@ -42,18 +41,18 @@ async function startServer() {
     const proxyReq = https.request(options, (proxyRes) => {
       res.status(proxyRes.statusCode || 500);
       
-      // Add CORS headers so the frontend can read the response and X-PAYMENT-RESPONSE
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,X-PAYMENT');
-      res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE,X-PAYMENT-RESPONSE');
-      
       // Forward headers from target
       for (const key in proxyRes.headers) {
         if (proxyRes.headers.hasOwnProperty(key)) {
           res.setHeader(key, proxyRes.headers[key] as string);
         }
       }
+
+      // Re-apply CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,X-PAYMENT,PAYMENT-SIGNATURE');
+      res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-RESPONSE,X-PAYMENT-RESPONSE');
 
       proxyRes.pipe(res);
     });
