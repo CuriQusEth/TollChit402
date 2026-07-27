@@ -63,7 +63,11 @@ export default function PaymentForm() {
       });
 
       if (!response.ok) {
-        throw new Error(`Sunucu Hatası: ${response.statusText}`);
+        let errorBody = "";
+        try {
+          errorBody = await response.text();
+        } catch (e) {}
+        throw new Error(`Sunucu Hatası: ${response.status} ${response.statusText} - ${errorBody}`);
       }
 
       let finalTxHash = "Payment successful (Tx managed by x402)";
