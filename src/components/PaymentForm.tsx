@@ -82,7 +82,9 @@ export default function PaymentForm() {
       setTxHash(finalTxHash);
 
     } catch (err: any) {
-      console.warn("x402 fetch error:", err);
+      console.error("Tam hata:", err);
+      console.error("Error message:", err.message);
+      console.error("Error cause:", err.cause);
       setError(err.message || "Bilinmeyen bir hata oluştu.");
     } finally {
       setIsPaying(false);
