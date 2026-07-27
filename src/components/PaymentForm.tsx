@@ -54,10 +54,10 @@ export default function PaymentForm() {
       }
 
       // 4. Create an x402-wrapped fetch function
-      const fetchWithPayment = wrapFetchWithPayment(window.fetch, client);
+      const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
       // 5. Execute payment against a test API
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://x402.direct/api/search';
+      const apiUrl = import.meta.env.VITE_API_URL || '/api/x402/api/search';
       const response = await fetchWithPayment(apiUrl, {
         method: 'GET'
       });
