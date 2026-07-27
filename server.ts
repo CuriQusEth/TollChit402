@@ -10,7 +10,7 @@ async function startServer() {
 
   // We need to parse raw body for proxying POSTs, but wait, it's just a proxy.
   // Actually, a simpler way is to just use http.request to proxy it manually.
-  app.all("/api/proxy-search", (req, res) => {
+  app.use("/api/proxy-search", (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,X-PAYMENT,PAYMENT-SIGNATURE');
@@ -37,6 +37,7 @@ async function startServer() {
     delete options.headers['referer'];
     delete options.headers['connection'];
     delete options.headers['accept-encoding'];
+    delete options.headers['content-length'];
 
     const proxyReq = https.request(options, (proxyRes) => {
       res.status(proxyRes.statusCode || 500);
@@ -62,7 +63,11 @@ async function startServer() {
       res.status(500).send("Proxy error: " + e.message);
     });
 
-    req.pipe(proxyReq);
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        req.pipe(proxyReq);
+    } else {
+        proxyReq.end();
+    }
   });
 
   // Vite middleware for development
