@@ -1,0 +1,6 @@
+{
+  "name": "x402 Pay",
+  "description": "Base ağında USDC ile Builder Code kullanarak x402 protokolü üzerinden hızlı ödeme yapın.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
