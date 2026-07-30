@@ -23,7 +23,7 @@ export default function PaymentForm() {
 
   const handleConnect = () => {
     try {
-      const connector = connectors.find((c) => c.type === 'injected') || connectors[0];
+      const connector = connectors.find((c) => c.name.toLowerCase().includes('rabby') || c.id.toLowerCase().includes('rabby')) || connectors.find((c) => c.type === 'injected') || connectors[0];
       if (connector) {
         connect({ connector });
       } else {
@@ -132,7 +132,7 @@ export default function PaymentForm() {
               disabled={isConnecting}
               className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
             >
-              {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Connect Wallet"}
+              {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Connect Rabby Wallet"}
             </button>
           ) : (
             <button
