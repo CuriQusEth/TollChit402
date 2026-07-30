@@ -36,7 +36,16 @@ export default function PaymentForm() {
   };
 
   const handlePay = async () => {
-    if (!walletClient || !publicClient) return;
+    if (!isConnected) {
+      handleConnect();
+      return;
+    }
+    
+    if (!walletClient || !publicClient) {
+      setError("Cüzdan bağlantısı bekleniyor veya yanlış ağ. Lütfen Base Mainnet (8453) üzerinde olduğunuzdan emin olun.");
+      return;
+    }
+    
     setIsPaying(true);
     setError(null);
     setTxHash(null);
@@ -174,7 +183,7 @@ export default function PaymentForm() {
             </div>
             <button
               onClick={isConnected ? handlePay : handleConnect}
-              disabled={isPaying || (isConnected && !walletClient)}
+              disabled={isPaying}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
               {isPaying ? (
