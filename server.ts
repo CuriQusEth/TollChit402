@@ -32,7 +32,7 @@ async function startServer() {
       "user-agent": "x402-pay-proxy/1.0",
     };
 
-    // Ödeme header’larını ilet
+    // Forward payment headers
     for (const h of [
       "payment-signature",
       "payment-required",
@@ -43,10 +43,35 @@ async function startServer() {
       if (v) headers[h] = Array.isArray(v) ? v[0] : v;
     }
     
-    // Translate V2 to V1 on request
-    if (req.headers["payment-signature"]) {
-      headers["x-payment"] = req.headers["payment-signature"] as string;
+    // Map payment-signature to x-payment if present
+    if (req.headers['payment-signature'] && !headers['x-payment']) {
+      headers['x-payment'] = req.headers['payment-signature'] as string;
     }
+    
+    if (headers['x-402-payment'] && !headers['x-payment']) {
+      headers['x-payment'] = headers['x-402-payment'];
+    }
+
+    // Rewrite Request (v2 -> v1)
+    if (headers['x-payment']) {
+      try {
+        const decoded = JSON.parse(Buffer.from(headers['x-payment'], 'base64').toString('utf8'));
+        if (decoded.x402Version === 2) {
+          const v1Payload = {
+            x402Version: 1,
+            scheme: decoded.accepted?.scheme || 'exact',
+            network: decoded.accepted?.network?.includes('8453') ? 'base' : 'base',
+            payload: decoded.payload
+          };
+          headers['x-payment'] = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
+        }
+      } catch (e) {
+        console.error("Rewrite req failed", e);
+      }
+    }
+
+    // Don't forward x-402-payment to x402.direct
+    delete headers['x-402-payment'];
 
     const proxyReq = https.request(
       {
@@ -64,10 +89,9 @@ async function startServer() {
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader(
           "Access-Control-Expose-Headers",
-          "PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE"
+          "PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE,X-402-Payment-Required"
         );
         
-        // Translate V1 to V2 on response payload
         if (proxyRes.statusCode === 402) {
           let bodyData = Buffer.alloc(0);
           proxyRes.on('data', (chunk) => {
@@ -95,13 +119,14 @@ async function startServer() {
                        asset: a.asset,
                        payTo: a.payTo ? a.payTo.trim() : a.payTo,
                        maxTimeoutSeconds: a.maxTimeoutSeconds,
-                       extra: a.extra
+                       extra: a.extra || { name: 'USD Coin', version: '2' },
                     }))
                   };
                   base64Body = Buffer.from(JSON.stringify(v2Payload)).toString('base64');
                 }
               } catch (jsonErr) {}
               res.setHeader('payment-required', base64Body);
+              res.setHeader('x-402-payment-required', base64Body);
               res.end(bodyData);
             } catch (e) {
               res.end(bodyData);
@@ -112,12 +137,10 @@ async function startServer() {
         }
       }
     );
-
     proxyReq.on("error", (e) => {
       console.error(e);
       res.status(502).json({ error: "proxy_failed", message: e.message });
     });
-
     if (req.method !== "GET" && req.method !== "HEAD") req.pipe(proxyReq);
     else proxyReq.end();
   });

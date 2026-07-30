@@ -40,6 +40,31 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   if (req.headers['payment-signature'] && !headers['x-payment']) {
     headers['x-payment'] = req.headers['payment-signature'] as string;
   }
+  
+  if (headers['x-402-payment'] && !headers['x-payment']) {
+    headers['x-payment'] = headers['x-402-payment'];
+  }
+
+  // Rewrite Request (v2 -> v1)
+  if (headers['x-payment']) {
+    try {
+      const decoded = JSON.parse(Buffer.from(headers['x-payment'], 'base64').toString('utf8'));
+      if (decoded.x402Version === 2) {
+        const v1Payload = {
+          x402Version: 1,
+          scheme: decoded.accepted?.scheme || 'exact',
+          network: decoded.accepted?.network?.includes('8453') ? 'base' : 'base',
+          payload: decoded.payload
+        };
+        headers['x-payment'] = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
+      }
+    } catch (e) {
+      console.error("Rewrite req failed", e);
+    }
+  }
+
+  // Don't forward x-402-payment to x402.direct
+  delete headers['x-402-payment'];
 
   const proxyReq = https.request(
     {
@@ -60,7 +85,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader(
         'Access-Control-Expose-Headers',
-        'PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE'
+        'PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE,X-402-Payment-Required'
       );
 
       if (proxyRes.statusCode === 402) {
@@ -90,13 +115,15 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
                     asset: a.asset,
                     payTo: a.payTo ? a.payTo.trim() : a.payTo,
                     maxTimeoutSeconds: a.maxTimeoutSeconds,
-                    extra: a.extra,
+                    extra: a.extra || { name: 'USD Coin', version: '2' },
                   })),
                 };
                 base64Body = Buffer.from(JSON.stringify(v2Payload)).toString('base64');
               }
             } catch (jsonErr) {}
+            // Send back in the header that the client expects
             res.setHeader('payment-required', base64Body);
+            res.setHeader('x-402-payment-required', base64Body);
             res.send(bodyData);
           } catch (e) {
             res.send(bodyData);

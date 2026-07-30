@@ -55,13 +55,16 @@ export default function PaymentForm() {
       const clientSigner = {
         address: walletClient.account.address,
         signTypedData: async (msg: any) => {
-          return await walletClient.signTypedData({
+          console.log("Signing msg:", msg);
+          const sig = await walletClient.signTypedData({
             account: walletClient.account,
             domain: msg.domain,
             types: msg.types,
             primaryType: msg.primaryType,
             message: msg.message,
           });
+          console.log("Got signature:", sig);
+          return sig;
         },
         readContract: async (args: any) => {
           return await publicClient.readContract(args as any);
