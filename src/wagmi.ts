@@ -8,5 +8,4 @@ export const config = createConfig({
   transports: {
     [base.id]: http(),
   },
-  multiInjectedProviderDiscovery: false,
 });

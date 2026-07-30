@@ -21,6 +21,20 @@ export default function PaymentForm() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const handleConnect = () => {
+    try {
+      const connector = connectors.find((c) => c.type === 'injected') || connectors[0];
+      if (connector) {
+        connect({ connector });
+      } else {
+        setError("Cüzdan bulunamadı. Lütfen MetaMask veya Rabby gibi bir cüzdan yükleyin.");
+      }
+    } catch (err: any) {
+      console.error("Connection error:", err);
+      setError("Cüzdana bağlanırken hata oluştu: " + err.message);
+    }
+  };
+
   const handlePay = async () => {
     if (!walletClient || !publicClient) return;
     setIsPaying(true);
@@ -114,7 +128,7 @@ export default function PaymentForm() {
         <div className="flex items-center justify-end mb-6">
           {!isConnected ? (
             <button
-              onClick={() => connect({ connector: connectors[0] })}
+              onClick={handleConnect}
               disabled={isConnecting}
               className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
             >
@@ -159,7 +173,7 @@ export default function PaymentForm() {
               <span className="font-bold text-white">Base USDC</span>
             </div>
             <button
-              onClick={isConnected ? handlePay : () => connect({ connector: connectors[0] })}
+              onClick={isConnected ? handlePay : handleConnect}
               disabled={isPaying || (isConnected && !walletClient)}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
