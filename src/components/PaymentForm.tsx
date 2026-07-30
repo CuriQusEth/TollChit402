@@ -34,7 +34,10 @@ export default function PaymentForm() {
         signTypedData: async (msg: any) => {
           return await walletClient.signTypedData({
             account: walletClient.account,
-            ...msg
+            domain: msg.domain,
+            types: msg.types,
+            primaryType: msg.primaryType,
+            message: msg.message,
           });
         },
         readContract: async (args: any) => {
@@ -49,8 +52,15 @@ export default function PaymentForm() {
       client.register("eip155:*", new ExactEvmScheme(clientSigner as any));
 
       // 3. Register Builder Code extension if provided
-      if (builderCode.trim().startsWith('bc_')) {
-        client.registerExtension(new BuilderCodeClientExtension(builderCode.trim()));
+      const code = builderCode.trim().toLowerCase();
+      const BC_RE = /^[a-z0-9_]{1,32}$/;
+      
+      if (code && BC_RE.test(code)) {
+        client.registerExtension(new BuilderCodeClientExtension(code));
+      } else if (code) {
+        setError("Geçersiz Builder Code. Format: bc_... (a-z, 0-9, _)");
+        setIsPaying(false);
+        return;
       }
 
       // 4. Create an x402-wrapped fetch function
@@ -166,7 +176,7 @@ export default function PaymentForm() {
             </button>
           </div>
 
-          {builderCode.trim().startsWith('bc_') && (
+          {builderCode.trim() && /^[a-z0-9_]{1,32}$/.test(builderCode.trim().toLowerCase()) && (
             <div className="flex items-center gap-3 bg-black/50 p-3 border border-emerald-500/10">
               <div className="animate-pulse w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
               <p className="text-[10px] font-mono text-gray-400 uppercase truncate">
