@@ -50,6 +50,16 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const decoded = JSON.parse(Buffer.from(headers['x-payment'], 'base64').toString('utf8'));
       if (decoded.x402Version === 2) {
+        if (decoded.payload) {
+          if (typeof decoded.payload.signature === 'string') {
+            decoded.payload.signature = decoded.payload.signature.toLowerCase();
+          }
+          if (decoded.payload.authorization) {
+             if (typeof decoded.payload.authorization.from === 'string') decoded.payload.authorization.from = decoded.payload.authorization.from.toLowerCase();
+             if (typeof decoded.payload.authorization.to === 'string') decoded.payload.authorization.to = decoded.payload.authorization.to.toLowerCase();
+             if (typeof decoded.payload.authorization.nonce === 'string') decoded.payload.authorization.nonce = decoded.payload.authorization.nonce.toLowerCase();
+          }
+        }
         const v1Payload = {
           x402Version: 1,
           scheme: decoded.accepted?.scheme || 'exact',
