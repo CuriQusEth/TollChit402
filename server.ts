@@ -59,7 +59,10 @@ async function startServer() {
         if (decoded.x402Version === 2) {
           if (decoded.payload) {
             if (typeof decoded.payload.signature === 'string') {
-              decoded.payload.signature = decoded.payload.signature.toLowerCase();
+              let sig = decoded.payload.signature;
+              if (!sig.startsWith('0x')) sig = '0x' + sig;
+              if (sig.length === 130) sig = sig + '1c';
+              decoded.payload.signature = sig.toLowerCase();
             }
             if (decoded.payload.authorization) {
                if (typeof decoded.payload.authorization.from === 'string') decoded.payload.authorization.from = decoded.payload.authorization.from.toLowerCase();
