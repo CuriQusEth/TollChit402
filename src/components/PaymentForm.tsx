@@ -15,7 +15,6 @@ export default function PaymentForm() {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
-  const [receiver, setReceiver] = useState("");
   const [builderCode, setBuilderCode] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -164,17 +163,6 @@ export default function PaymentForm() {
         </div>
         
         <div className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Optional)</label>
-            <input
-              type="text"
-              placeholder="0x..."
-              value={receiver}
-              onChange={(e) => setReceiver(e.target.value)}
-              className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
-            />
-          </div>
-          
           <div className="space-y-2">
             <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Builder Code (Optional)</label>
             <input

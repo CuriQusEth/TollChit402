@@ -8,8 +8,6 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // We need to parse raw body for proxying POSTs, but wait, it's just a proxy.
-  // Actually, a simpler way is to just use http.request to proxy it manually.
   app.use("/api/proxy-search", (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -19,12 +17,14 @@ async function startServer() {
     );
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "PAYMENT-RESPONSE, PAYMENT-REQUIRED, X-PAYMENT-RESPONSE, X-402-Payment"
+      "PAYMENT-RESPONSE, PAYMENT-REQUIRED, X-PAYMENT-RESPONSE"
     );
 
     if (req.method === "OPTIONS") return res.status(200).end();
 
-    const target = new URL("https://x402.direct/api/search?q=test");
+    const target = new URL("https://x402.direct/api/search");
+    const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    target.search = query;
 
     const headers: Record<string, string> = {
       host: "x402.direct",
@@ -32,7 +32,6 @@ async function startServer() {
       "user-agent": "x402-pay-proxy/1.0",
     };
 
-    // Forward payment headers
     for (const h of [
       "payment-signature",
       "payment-required",
@@ -42,17 +41,15 @@ async function startServer() {
       const v = req.headers[h];
       if (v) headers[h] = Array.isArray(v) ? v[0] : v;
     }
-    
-    // Map payment-signature to x-payment if present
+
     if (req.headers['payment-signature'] && !headers['x-payment']) {
       headers['x-payment'] = req.headers['payment-signature'] as string;
     }
-    
+
     if (headers['x-402-payment'] && !headers['x-payment']) {
       headers['x-payment'] = headers['x-402-payment'];
     }
 
-    // Rewrite Request (v2 -> v1)
     if (headers['x-payment']) {
       try {
         const decoded = JSON.parse(Buffer.from(headers['x-payment'], 'base64').toString('utf8'));
@@ -61,7 +58,6 @@ async function startServer() {
             if (typeof decoded.payload.signature === 'string') {
               let sig = decoded.payload.signature;
               if (!sig.startsWith('0x')) sig = '0x' + sig;
-              if (sig.length === 130) sig = sig + '1c';
               decoded.payload.signature = sig.toLowerCase();
             }
             if (decoded.payload.authorization) {
@@ -70,20 +66,33 @@ async function startServer() {
                if (typeof decoded.payload.authorization.nonce === 'string') decoded.payload.authorization.nonce = decoded.payload.authorization.nonce.toLowerCase();
             }
           }
+          
+          const targetNetwork = decoded.accepted?.network || 'eip155:8453';
+          let v1Network = 'base';
+          if (targetNetwork.includes('84532')) {
+            v1Network = 'base-sepolia';
+          } else if (targetNetwork.includes('8453')) {
+            v1Network = 'base';
+          } else {
+            throw new Error(`Unsupported network: ${targetNetwork}`);
+          }
+
           const v1Payload = {
             x402Version: 1,
             scheme: decoded.accepted?.scheme || 'exact',
-            network: decoded.accepted?.network?.includes('8453') ? 'base' : 'base',
+            network: v1Network,
             payload: decoded.payload
           };
           headers['x-payment'] = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Rewrite req failed", e);
+        if (e.message.includes('Unsupported network')) {
+            return res.status(400).json({ error: e.message });
+        }
       }
     }
 
-    // Don't forward x-402-payment to x402.direct
     delete headers['x-402-payment'];
 
     const proxyReq = https.request(
@@ -102,9 +111,9 @@ async function startServer() {
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader(
           "Access-Control-Expose-Headers",
-          "PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE,X-402-Payment-Required"
+          "PAYMENT-RESPONSE,PAYMENT-REQUIRED,X-PAYMENT-RESPONSE"
         );
-        
+
         if (proxyRes.statusCode === 402) {
           let bodyData = Buffer.alloc(0);
           proxyRes.on('data', (chunk) => {
@@ -127,7 +136,7 @@ async function startServer() {
                     },
                     accepts: parsed.accepts?.map((a: any) => ({
                        scheme: a.scheme,
-                       network: a.network === "base" ? "eip155:8453" : a.network,
+                       network: a.network === "base-sepolia" ? "eip155:84532" : (a.network === "base" ? "eip155:8453" : a.network),
                        amount: a.maxAmountRequired || a.amount,
                        asset: a.asset,
                        payTo: a.payTo ? a.payTo.trim() : a.payTo,
@@ -139,7 +148,6 @@ async function startServer() {
                 }
               } catch (jsonErr) {}
               res.setHeader('payment-required', base64Body);
-              res.setHeader('x-402-payment-required', base64Body);
               res.end(bodyData);
             } catch (e) {
               res.end(bodyData);
@@ -150,15 +158,16 @@ async function startServer() {
         }
       }
     );
+
     proxyReq.on("error", (e) => {
       console.error(e);
       res.status(502).json({ error: "proxy_failed", message: e.message });
     });
+
     if (req.method !== "GET" && req.method !== "HEAD") req.pipe(proxyReq);
     else proxyReq.end();
   });
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
