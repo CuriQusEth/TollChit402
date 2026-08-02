@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import http from "http";
 import https from "https";
+import { transformX402PaymentHeader, transformPaymentRequiredResponse } from "./src/lib/x402-proxy";
 
 async function startServer() {
   const app = express();
@@ -52,43 +53,13 @@ async function startServer() {
 
     if (headers['x-payment']) {
       try {
-        const decoded = JSON.parse(Buffer.from(headers['x-payment'], 'base64').toString('utf8'));
-        if (decoded.x402Version === 2) {
-          if (decoded.payload) {
-            if (typeof decoded.payload.signature === 'string') {
-              let sig = decoded.payload.signature;
-              if (!sig.startsWith('0x')) sig = '0x' + sig;
-              decoded.payload.signature = sig.toLowerCase();
-            }
-            if (decoded.payload.authorization) {
-               if (typeof decoded.payload.authorization.from === 'string') decoded.payload.authorization.from = decoded.payload.authorization.from.toLowerCase();
-               if (typeof decoded.payload.authorization.to === 'string') decoded.payload.authorization.to = decoded.payload.authorization.to.toLowerCase();
-               if (typeof decoded.payload.authorization.nonce === 'string') decoded.payload.authorization.nonce = decoded.payload.authorization.nonce.toLowerCase();
-            }
-          }
-          
-          const targetNetwork = decoded.accepted?.network || 'eip155:8453';
-          let v1Network = 'base';
-          if (targetNetwork.includes('84532')) {
-            v1Network = 'base-sepolia';
-          } else if (targetNetwork.includes('8453')) {
-            v1Network = 'base';
-          } else {
-            throw new Error(`Unsupported network: ${targetNetwork}`);
-          }
-
-          const v1Payload = {
-            x402Version: 1,
-            scheme: decoded.accepted?.scheme || 'exact',
-            network: v1Network,
-            payload: decoded.payload
-          };
-          headers['x-payment'] = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
+        const transformed = transformX402PaymentHeader(headers['x-payment']);
+        if (transformed) {
+          headers['x-payment'] = transformed;
         }
       } catch (e: any) {
-        console.error("Rewrite req failed", e);
         if (e.message.includes('Unsupported network')) {
-            return res.status(400).json({ error: e.message });
+          return res.status(400).json({ error: e.message });
         }
       }
     }
@@ -123,30 +94,10 @@ async function startServer() {
             try {
               const bodyStr = bodyData.toString('utf8');
               let base64Body = Buffer.from(bodyStr).toString('base64');
-              try {
-                const parsed = JSON.parse(bodyStr);
-                if (parsed.x402Version === 1) {
-                  const v2Payload = {
-                    x402Version: 2,
-                    error: parsed.error || "Payment required",
-                    resource: {
-                       url: parsed.accepts?.[0]?.resource || "https://x402.direct/api/search",
-                       description: parsed.accepts?.[0]?.description || "Search",
-                       mimeType: parsed.accepts?.[0]?.mimeType || "application/json"
-                    },
-                    accepts: parsed.accepts?.map((a: any) => ({
-                       scheme: a.scheme,
-                       network: a.network === "base-sepolia" ? "eip155:84532" : (a.network === "base" ? "eip155:8453" : a.network),
-                       amount: a.maxAmountRequired || a.amount,
-                       asset: a.asset,
-                       payTo: a.payTo ? a.payTo.trim() : a.payTo,
-                       maxTimeoutSeconds: a.maxTimeoutSeconds,
-                       extra: a.extra || { name: 'USD Coin', version: '2' },
-                    }))
-                  };
-                  base64Body = Buffer.from(JSON.stringify(v2Payload)).toString('base64');
-                }
-              } catch (jsonErr) {}
+              const transformed = transformPaymentRequiredResponse(bodyStr);
+              if (transformed) {
+                base64Body = transformed;
+              }
               res.setHeader('payment-required', base64Body);
               res.end(bodyData);
             } catch (e) {
@@ -171,18 +122,12 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
-    });
+      appType: "spa",    });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
+    app.get('*', (req, res) => {      res.sendFile(path.join(distPath, 'index.html'));    });  }  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
