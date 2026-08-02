@@ -62,9 +62,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
         );
       }
 
-      // Body is forwarded untouched — the SDK already knows how to read a
-      // v1-style JSON 402 body directly (getPaymentRequiredResponse falls
-      // back to the body when there's no PAYMENT-REQUIRED header).
+      // Body is forwarded untouched
       proxyRes.pipe(res);
     }
   );

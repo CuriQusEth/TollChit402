@@ -2,8 +2,13 @@ import React, { useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient } from 'wagmi';
 import { Loader2, Wallet, ArrowRight, CheckCircle2, AlertCircle, ExternalLink, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
-import { ExactEvmScheme } from '@x402/evm';
-import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
+import { ExactEvmScheme } from '@x402/evm/exact/client';
+import { ExactEvmSchemeV1 } from '@x402/evm/v1';
+import {
+  BuilderCodeClientExtension,
+  parseBuilderCodeSuffixFromCalldata,
+  type BuilderCodeExtensionData,
+} from '@x402/extensions/builder-code';
 import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensions';
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -15,13 +20,17 @@ export default function PaymentForm() {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
+  const [receiver, setReceiver] = useState("");
   const [builderCode, setBuilderCode] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attribution, setAttribution] = useState<BuilderCodeExtensionData | null>(null);
+  const [isVerifyingAttribution, setIsVerifyingAttribution] = useState(false);
 
-  const handleConnect = (connector: any) => {
+  const handleConnect = () => {
     try {
+      const connector = connectors.find((c) => c.name.toLowerCase().includes('rabby') || c.id.toLowerCase().includes('rabby')) || connectors.find((c) => c.type === 'injected') || connectors[0];
       if (connector) {
         connect({ connector });
       } else {
@@ -35,7 +44,7 @@ export default function PaymentForm() {
 
   const handlePay = async () => {
     if (!isConnected) {
-      setError("Önce bir cüzdan bağlamanız gerekmektedir.");
+      handleConnect();
       return;
     }
     
@@ -47,6 +56,7 @@ export default function PaymentForm() {
     setIsPaying(true);
     setError(null);
     setTxHash(null);
+    setAttribution(null);
 
     try {
       // 1. Prepare wagmi compatible signer for x402
@@ -72,8 +82,14 @@ export default function PaymentForm() {
       // 2. Initialize x402 client
       const client = new x402Client();
 
-      // Register the EVM scheme
+      // Register the v2 EVM scheme (CAIP-2 networks, e.g. future/other facilitators)
       client.register("eip155:*", new ExactEvmScheme(clientSigner as any));
+
+      // x402.direct currently speaks legacy protocol v1 (plain "base" network
+      // name, JSON 402 body instead of a PAYMENT-REQUIRED header). The SDK
+      // supports this natively via registerV1 + ExactEvmSchemeV1 — no manual
+      // header/body rewriting needed on our own proxy anymore.
+      client.registerV1("base", new ExactEvmSchemeV1(clientSigner as any));
 
       // 3. Register Builder Code extension if provided
       const code = builderCode.trim().toLowerCase();
@@ -119,6 +135,21 @@ export default function PaymentForm() {
 
       setTxHash(finalTxHash);
 
+      // 6. Verify onchain attribution (ERC-8021 Schema 2 calldata suffix),
+      // per https://docs.cdp.coinbase.com/x402/builder-code
+      if (/^0x[0-9a-fA-F]{64}$/.test(finalTxHash)) {
+        setIsVerifyingAttribution(true);
+        try {
+          const tx = await publicClient.getTransaction({ hash: finalTxHash as `0x${string}` });
+          const parsed = parseBuilderCodeSuffixFromCalldata(tx.input);
+          if (parsed) setAttribution(parsed);
+        } catch (e) {
+          console.warn("Failed to verify builder code attribution", e);
+        } finally {
+          setIsVerifyingAttribution(false);
+        }
+      }
+
     } catch (err: any) {
       console.error("Tam hata:", err);
       console.error("Error message:", err.message);
@@ -135,23 +166,15 @@ export default function PaymentForm() {
         <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-500"></div>
         <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-500"></div>
 
-        <div className="flex flex-col items-end gap-2 mb-6">
+        <div className="flex items-center justify-end mb-6">
           {!isConnected ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              {connectors.map((connector) => (
-                <button
-                  key={connector.uid}
-                  onClick={() => handleConnect(connector)}
-                  disabled={isConnecting}
-                  className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
-                >
-                  {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Connect ${connector.name}`}
-                </button>
-              ))}
-              {connectors.length === 0 && (
-                <span className="text-[10px] text-gray-500">No wallet found in browser. Please install Metamask/Rabby.</span>
-              )}
-            </div>
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
+            >
+              {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Connect Rabby Wallet"}
+            </button>
           ) : (
             <button
               onClick={() => disconnect()}
@@ -163,6 +186,17 @@ export default function PaymentForm() {
         </div>
         
         <div className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Optional)</label>
+            <input
+              type="text"
+              placeholder="0x..."
+              value={receiver}
+              onChange={(e) => setReceiver(e.target.value)}
+              className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
+            />
+          </div>
+          
           <div className="space-y-2">
             <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Builder Code (Optional)</label>
             <input
@@ -180,11 +214,7 @@ export default function PaymentForm() {
               <span className="font-bold text-white">Base USDC</span>
             </div>
             <button
-              onClick={isConnected ? handlePay : () => {
-                if (connectors.length > 0) {
-                  handleConnect(connectors[0]);
-                }
-              }}
+              onClick={isConnected ? handlePay : handleConnect}
               disabled={isPaying}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
@@ -235,6 +265,40 @@ export default function PaymentForm() {
             </a>
           </div>
           <div className="font-mono text-[10px] text-gray-400 break-all">{txHash}</div>
+
+          {isVerifyingAttribution && (
+            <div className="mt-3 flex items-center gap-2 text-[10px] font-mono text-gray-500 uppercase tracking-wider">
+              <Loader2 className="w-3 h-3 animate-spin" /> Verifying onchain attribution...
+            </div>
+          )}
+
+          {attribution && (attribution.a || attribution.w || attribution.s) && (
+            <div className="mt-3 pt-3 border-t border-emerald-500/10 space-y-1.5">
+              <div className="text-[10px] font-mono uppercase text-gray-500 tracking-wider mb-1">
+                ERC-8021 Attribution
+              </div>
+              {attribution.a && (
+                <div className="flex justify-between text-[10px] font-mono">
+                  <span className="text-gray-500">App (a)</span>
+                  <span className="text-gray-300">{attribution.a}</span>
+                </div>
+              )}
+              {attribution.w && (
+                <div className="flex justify-between text-[10px] font-mono">
+                  <span className="text-gray-500">Facilitator (w)</span>
+                  <span className="text-gray-300">{attribution.w}</span>
+                </div>
+              )}
+              {attribution.s && (
+                <div className="flex justify-between text-[10px] font-mono">
+                  <span className="text-gray-500">Service (s)</span>
+                  <span className="text-emerald-400">
+                    {Array.isArray(attribution.s) ? attribution.s.join(', ') : attribution.s}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
