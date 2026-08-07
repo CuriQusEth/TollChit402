@@ -19,23 +19,9 @@ export default function PaymentForm() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleConnect = () => {
-    try {
-      const connector = connectors.find((c) => c.name.toLowerCase().includes('rabby') || c.id.toLowerCase().includes('rabby')) || connectors.find((c) => c.type === 'injected') || connectors[0];
-      if (connector) {
-        connect({ connector });
-      } else {
-        setError("Cüzdan bulunamadı. Lütfen MetaMask veya Rabby gibi bir cüzdan yükleyin.");
-      }
-    } catch (err: any) {
-      console.error("Connection error:", err);
-      setError("Cüzdana bağlanırken hata oluştu: " + err.message);
-    }
-  };
-
   const handlePay = async () => {
     if (!isConnected) {
-      handleConnect();
+      connect({ connector: connectors[0] });
       return;
     }
     
@@ -123,15 +109,18 @@ export default function PaymentForm() {
         <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-500"></div>
         <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-500"></div>
 
-        <div className="flex items-center justify-end mb-6">
+        <div className="flex items-center justify-end mb-6 gap-2 flex-wrap">
           {!isConnected ? (
-            <button
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
-            >
-              {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Connect Rabby Wallet"}
-            </button>
+            connectors.map((connector) => (
+              <button
+                key={connector.uid}
+                onClick={() => connect({ connector })}
+                disabled={isConnecting}
+                className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
+              >
+                {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Connect ${connector.name}`}
+              </button>
+            ))
           ) : (
             <button
               onClick={() => disconnect()}
@@ -160,7 +149,7 @@ export default function PaymentForm() {
               <span className="font-bold text-white">Base USDC</span>
             </div>
             <button
-              onClick={isConnected ? handlePay : handleConnect}
+              onClick={isConnected ? handlePay : () => connect({ connector: connectors[0] })}
               disabled={isPaying}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
