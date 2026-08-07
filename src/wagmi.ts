@@ -1,12 +1,12 @@
 import { http, createConfig } from 'wagmi';
 import { base } from 'wagmi/chains';
-import { coinbaseWallet, injected } from 'wagmi/connectors';
+import { coinbaseWallet, metaMask } from 'wagmi/connectors';
 
 export const config = createConfig({
   chains: [base],
   multiInjectedProviderDiscovery: false,
   connectors: [
-    injected(),
+    metaMask(),
     coinbaseWallet({ appName: 'x402-pay', preference: 'all' })
   ],
   transports: {
