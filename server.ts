@@ -84,6 +84,47 @@ async function startServer() {
     else proxyReq.end();
   });
 
+  app.use("/api/data", (req, res) => {
+    const incomingUrl = new URL(req.url || '/', 'http://localhost');
+    const target = new URL(`https://api.cambrian.org${incomingUrl.pathname}`);
+    target.search = incomingUrl.search;
+
+    const headers: Record<string, string> = {
+      host: "api.cambrian.org",
+      accept: "application/json",
+      "user-agent": "x402-pay-proxy/1.0",
+    };
+
+    if (process.env.CAMBRIAN_API_KEY) {
+      headers['x-api-key'] = process.env.CAMBRIAN_API_KEY;
+    }
+
+    const proxyReq = https.request(
+      {
+        hostname: "api.cambrian.org",
+        port: 443,
+        path: target.pathname + target.search,
+        method: req.method,
+        headers,
+      },
+      (proxyRes) => {
+        res.status(proxyRes.statusCode || 500);
+        for (const [k, val] of Object.entries(proxyRes.headers)) {
+          if (val !== undefined) res.setHeader(k, val as string);
+        }
+        proxyRes.pipe(res);
+      }
+    );
+
+    proxyReq.on("error", (e) => {
+      console.error(e);
+      res.status(502).json({ error: "proxy_failed", message: e.message });
+    });
+
+    if (req.method !== "GET" && req.method !== "HEAD") req.pipe(proxyReq);
+    else proxyReq.end();
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
