@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
 import { Loader2, Wallet, ArrowRight, CheckCircle2, AlertCircle, ExternalLink, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
@@ -13,6 +13,7 @@ export default function PaymentForm() {
   const { disconnect } = useDisconnect();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { switchChainAsync } = useSwitchChain();
 
   const [receiver, setReceiver] = useState("");
   const [isPaying, setIsPaying] = useState(false);
@@ -26,8 +27,19 @@ export default function PaymentForm() {
     }
     
     if (!walletClient || !publicClient) {
-      setError("Cüzdan bağlantısı bekleniyor veya yanlış ağ. Lütfen Base Mainnet (8453) üzerinde olduğunuzdan emin olun.");
+      setError("Cüzdan bağlantısı bekleniyor. Lütfen tekrar deneyin.");
       return;
+    }
+    
+    if (walletClient.chain.id !== 8453) {
+      try {
+        await switchChainAsync({ chainId: 8453 });
+        setError("Ağ Base olarak değiştirildi. Lütfen işlemi tekrar başlatın.");
+        return;
+      } catch (err: any) {
+        setError("Ağ değiştirilemedi. Lütfen manuel olarak Base ağına geçin.");
+        return;
+      }
     }
     
     setIsPaying(true);
@@ -149,9 +161,9 @@ export default function PaymentForm() {
               <span className="font-bold text-white">Base USDC</span>
             </div>
             <button
-              onClick={isConnected ? handlePay : () => connect({ connector: connectors[0] })}
-              disabled={isPaying}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              onClick={isConnected ? handlePay : () => {}}
+              disabled={isPaying || !isConnected}
+              className={`w-full ${!isConnected ? 'bg-[#222] text-gray-500' : 'bg-emerald-500 hover:bg-emerald-400 text-black'} disabled:opacity-50 font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2`}
             >
               {isPaying ? (
                 <>
@@ -159,7 +171,7 @@ export default function PaymentForm() {
                   Processing...
                 </>
               ) : !isConnected ? (
-                "Connect to Pay"
+                "Connect Wallet to Pay"
               ) : (
                 "Process Payment"
               )}

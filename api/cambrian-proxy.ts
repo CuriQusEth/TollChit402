@@ -32,8 +32,11 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     'user-agent': 'x402-pay-proxy/1.0',
   };
 
-  const v = req.headers['x-payment'];
-  if (v) headers['x-payment'] = Array.isArray(v) ? v[0] : (v as string);
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (key.toLowerCase().startsWith('payment-') || key.toLowerCase().startsWith('x-payment')) {
+      headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : (value as string);
+    }
+  }
   
   if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
   
