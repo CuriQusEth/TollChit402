@@ -22,7 +22,7 @@ export default function PaymentForm() {
 
   const handlePay = async () => {
     if (!isConnected) {
-      connect({ connector: connectors[0] });
+      connect({ connector: connectors[0] }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) });
       return;
     }
     
@@ -126,7 +126,7 @@ export default function PaymentForm() {
             connectors.map((connector) => (
               <button
                 key={connector.uid}
-                onClick={() => connect({ connector })}
+                onClick={() => connect({ connector }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) })}
                 disabled={isConnecting}
                 className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
               >
