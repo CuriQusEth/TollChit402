@@ -87,6 +87,11 @@ export default function PaymentForm() {
         try {
           errorBody = await response.text();
         } catch (e) {}
+        
+        if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
+          throw new Error("Ödeme simülasyonu başarısız oldu. Base ağında yeterli USDC bakiyeniz (en az 0.05 USDC) olduğundan emin olun.");
+        }
+        
         throw new Error(`Sunucu Hatası: ${response.status} ${response.statusText} - ${errorBody}`);
       }
 
