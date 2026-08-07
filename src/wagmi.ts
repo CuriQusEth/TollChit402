@@ -4,8 +4,10 @@ import { injected, coinbaseWallet } from 'wagmi/connectors';
 
 export const config = createConfig({
   chains: [base],
+  multiInjectedProviderDiscovery: false,
   connectors: [
-    injected(),
+    injected({ target: 'metaMask' }),
+    injected({ target: 'rabby' }),
     coinbaseWallet({ appName: 'x402-pay', preference: 'smartWalletOnly' })
   ],
   transports: {

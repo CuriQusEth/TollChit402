@@ -3,12 +3,6 @@ import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient
 import { Loader2, Wallet, ArrowRight, CheckCircle2, AlertCircle, ExternalLink, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
-import { ExactEvmSchemeV1 } from '@x402/evm/v1';
-import {
-  BuilderCodeClientExtension,
-  parseBuilderCodeSuffixFromCalldata,
-  type BuilderCodeExtensionData,
-} from '@x402/extensions/builder-code';
 import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensions';
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -21,12 +15,9 @@ export default function PaymentForm() {
   const publicClient = usePublicClient();
 
   const [receiver, setReceiver] = useState("");
-  const [builderCode, setBuilderCode] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [attribution, setAttribution] = useState<BuilderCodeExtensionData | null>(null);
-  const [isVerifyingAttribution, setIsVerifyingAttribution] = useState(false);
 
   const handleConnect = () => {
     try {
@@ -56,7 +47,6 @@ export default function PaymentForm() {
     setIsPaying(true);
     setError(null);
     setTxHash(null);
-    setAttribution(null);
 
     try {
       // 1. Prepare wagmi compatible signer for x402
@@ -85,29 +75,11 @@ export default function PaymentForm() {
       // Register the v2 EVM scheme (CAIP-2 networks, e.g. future/other facilitators)
       client.register("eip155:*", new ExactEvmScheme(clientSigner as any));
 
-      // x402.direct currently speaks legacy protocol v1 (plain "base" network
-      // name, JSON 402 body instead of a PAYMENT-REQUIRED header). The SDK
-      // supports this natively via registerV1 + ExactEvmSchemeV1 — no manual
-      // header/body rewriting needed on our own proxy anymore.
-      client.registerV1("base", new ExactEvmSchemeV1(clientSigner as any));
-
-      // 3. Register Builder Code extension if provided
-      const code = builderCode.trim().toLowerCase();
-      const BC_RE = /^[a-z0-9_]{1,32}$/;
-      
-      if (code && BC_RE.test(code)) {
-        client.registerExtension(new BuilderCodeClientExtension(code));
-      } else if (code) {
-        setError("Geçersiz Builder Code. Format: bc_... (a-z, 0-9, _)");
-        setIsPaying(false);
-        return;
-      }
-
       // 4. Create an x402-wrapped fetch function
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
-      // 5. Execute payment against a test API
-      const apiUrl = '/api/proxy-search';
+      // 5. Execute payment against Cambrian API
+      const apiUrl = '/api/cambrian/evm/price-current?address=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chain=base';
       const response = await fetchWithPayment(apiUrl, {
         method: 'GET'
       });
@@ -134,21 +106,6 @@ export default function PaymentForm() {
       }
 
       setTxHash(finalTxHash);
-
-      // 6. Verify onchain attribution (ERC-8021 Schema 2 calldata suffix),
-      // per https://docs.cdp.coinbase.com/x402/builder-code
-      if (/^0x[0-9a-fA-F]{64}$/.test(finalTxHash)) {
-        setIsVerifyingAttribution(true);
-        try {
-          const tx = await publicClient.getTransaction({ hash: finalTxHash as `0x${string}` });
-          const parsed = parseBuilderCodeSuffixFromCalldata(tx.input);
-          if (parsed) setAttribution(parsed);
-        } catch (e) {
-          console.warn("Failed to verify builder code attribution", e);
-        } finally {
-          setIsVerifyingAttribution(false);
-        }
-      }
 
     } catch (err: any) {
       console.error("Tam hata:", err);
@@ -196,17 +153,6 @@ export default function PaymentForm() {
               className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
             />
           </div>
-          
-          <div className="space-y-2">
-            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Builder Code (Optional)</label>
-            <input
-              type="text"
-              placeholder="bc_..."
-              value={builderCode}
-              onChange={(e) => setBuilderCode(e.target.value)}
-              className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
-            />
-          </div>
 
           <div className="pt-4">
             <div className="flex justify-between items-end mb-4 border-b border-[#222] pb-4">
@@ -230,15 +176,6 @@ export default function PaymentForm() {
               )}
             </button>
           </div>
-
-          {builderCode.trim() && /^[a-z0-9_]{1,32}$/.test(builderCode.trim().toLowerCase()) && (
-            <div className="flex items-center gap-3 bg-black/50 p-3 border border-emerald-500/10">
-              <div className="animate-pulse w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
-              <p className="text-[10px] font-mono text-gray-400 uppercase truncate">
-                Extension: BuilderCodeClient Active ({builderCode.trim()})
-              </p>
-            </div>
-          )}
 
           {error && (
             <div className="flex items-center gap-3 bg-red-950/30 p-3 border border-red-500/20 text-red-400 text-[10px] font-mono uppercase">
@@ -265,40 +202,6 @@ export default function PaymentForm() {
             </a>
           </div>
           <div className="font-mono text-[10px] text-gray-400 break-all">{txHash}</div>
-
-          {isVerifyingAttribution && (
-            <div className="mt-3 flex items-center gap-2 text-[10px] font-mono text-gray-500 uppercase tracking-wider">
-              <Loader2 className="w-3 h-3 animate-spin" /> Verifying onchain attribution...
-            </div>
-          )}
-
-          {attribution && (attribution.a || attribution.w || attribution.s) && (
-            <div className="mt-3 pt-3 border-t border-emerald-500/10 space-y-1.5">
-              <div className="text-[10px] font-mono uppercase text-gray-500 tracking-wider mb-1">
-                ERC-8021 Attribution
-              </div>
-              {attribution.a && (
-                <div className="flex justify-between text-[10px] font-mono">
-                  <span className="text-gray-500">App (a)</span>
-                  <span className="text-gray-300">{attribution.a}</span>
-                </div>
-              )}
-              {attribution.w && (
-                <div className="flex justify-between text-[10px] font-mono">
-                  <span className="text-gray-500">Facilitator (w)</span>
-                  <span className="text-gray-300">{attribution.w}</span>
-                </div>
-              )}
-              {attribution.s && (
-                <div className="flex justify-between text-[10px] font-mono">
-                  <span className="text-gray-500">Service (s)</span>
-                  <span className="text-emerald-400">
-                    {Array.isArray(attribution.s) ? attribution.s.join(', ') : attribution.s}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, X-PAYMENT'
+    'Content-Type, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, X-PAYMENT, x-api-key'
   );
   res.setHeader(
     'Access-Control-Expose-Headers',
@@ -17,26 +17,33 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // Forward the real incoming query string instead of a hardcoded one.
-  const incomingUrl = new URL(req.url || '', 'http://localhost');
-  const target = new URL('https://x402.direct/api/search');
+  const incomingUrl = new URL(req.url || '/', 'http://localhost');
+  let targetPath = incomingUrl.pathname;
+  if (targetPath.startsWith('/api/cambrian')) {
+    targetPath = targetPath.replace('/api/cambrian', '') || '/';
+  }
+  
+  const target = new URL(`https://x402.cambrian.org${targetPath}`);
   target.search = incomingUrl.search;
 
   const headers: Record<string, string> = {
-    host: 'x402.direct',
+    host: 'x402.cambrian.org',
     accept: 'application/json',
     'user-agent': 'x402-pay-proxy/1.0',
   };
 
-  // Forward the payment header as-is. The x402 client SDK on the frontend
-  // already produces a protocol-v1-correct X-PAYMENT value for x402.direct
-  // (via client.registerV1 + ExactEvmSchemeV1), so no rewriting is needed.
   const v = req.headers['x-payment'];
   if (v) headers['x-payment'] = Array.isArray(v) ? v[0] : (v as string);
+  
+  if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
+  
+  if (process.env.CAMBRIAN_API_KEY) {
+    headers['x-api-key'] = process.env.CAMBRIAN_API_KEY;
+  }
 
   const proxyReq = https.request(
     {
-      hostname: 'x402.direct',
+      hostname: 'x402.cambrian.org',
       port: 443,
       path: target.pathname + target.search,
       method: req.method,
@@ -58,11 +65,10 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 
       if (proxyRes.statusCode && proxyRes.statusCode >= 400 && proxyRes.statusCode !== 402) {
         console.error(
-          `[proxy] upstream x402.direct returned ${proxyRes.statusCode} for ${target.pathname}${target.search}`
+          `[proxy] upstream x402.cambrian.org returned ${proxyRes.statusCode} for ${target.pathname}${target.search}`
         );
       }
 
-      // Body is forwarded untouched
       proxyRes.pipe(res);
     }
   );

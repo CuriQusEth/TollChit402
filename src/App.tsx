@@ -67,7 +67,7 @@ export default function App() {
                 <h1 className="text-[80px] md:text-[130px] font-black leading-[0.85] tracking-tighter uppercase">
                   <span className="block">Pay</span>
                   <span className="block text-transparent break-all" style={{ WebkitTextStroke: '1px #10b981' }}>
-                    $0.001
+                    $0.05
                   </span>
                 </h1>
                 <p className="text-gray-400 text-lg mt-6 max-w-md font-light">
@@ -94,7 +94,7 @@ export default function App() {
           <footer className="h-12 bg-black border-t border-[#141414] px-8 flex items-center justify-between text-[10px] font-mono text-gray-600 uppercase tracking-widest hidden sm:flex shrink-0">
             <div>Protocol Version: 1.0.42-STABLE</div>
             <div>&copy; 2026 x402 Development Group // Base Ecosystem</div>
-            <div>Facilitator: Coinbase CDP</div>
+            <div>Facilitator: x402 protocol</div>
           </footer>
         </div>
       </QueryClientProvider>
