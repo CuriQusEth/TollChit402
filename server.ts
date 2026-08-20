@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import https from "https";
@@ -7,7 +8,28 @@ import { copyResponseHeaders } from "./api/_proxy";
 
 dotenv.config();
 
+/**
+ * Both proxies attach CAMBRIAN_API_KEY as `x-api-key` when it is set. Upstream
+ * rejects unauthenticated calls, so warn once at startup rather than letting
+ * every request fail with an opaque 4xx.
+ */
+function warnAboutMissingEnv() {
+  if (process.env.CAMBRIAN_API_KEY) return;
+
+  if (!fs.existsSync(path.join(process.cwd(), ".env"))) {
+    console.warn(
+      "[env] .env bulunamadı. `cp .env.example .env` komutuyla oluşturup CAMBRIAN_API_KEY değerini doldurun."
+    );
+  } else {
+    console.warn(
+      "[env] CAMBRIAN_API_KEY tanımlı değil. Cambrian istekleri API anahtarı olmadan gönderilecek."
+    );
+  }
+}
+
 async function startServer() {
+  warnAboutMissingEnv();
+
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
@@ -135,8 +157,19 @@ async function startServer() {
     });
   }
   
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `[server] ${PORT} portu kullanımda. Portu boşaltın veya PORT=3001 npm run dev ile farklı bir port verin.`
+      );
+    } else {
+      console.error("[server] Sunucu başlatılamadı:", err.message);
+    }
+    process.exit(1);
   });
 }
 

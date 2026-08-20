@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
 import { Loader2, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
+import type { ClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { ExactEvmSchemeV1 } from '@x402/evm/v1';
 import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensions';
@@ -59,16 +60,20 @@ export default function PaymentForm() {
 
     try {
       // 1. Prepare wagmi compatible signer for x402
-      const clientSigner = {
+      const clientSigner: ClientEvmSigner = {
         address: walletClient.account.address,
-        signTypedData: async (msg: any) => {
+        signTypedData: async (msg) => {
+          // x402 describes the EIP-712 payload with plain records, while viem
+          // infers narrow TypedDataDefinition generics that cannot be rebuilt
+          // from that shape. These two assertions are the only ones genuinely
+          // required; they are confined to this boundary.
           const raw = await walletClient.signTypedData({
             account: walletClient.account,
             domain: msg.domain,
             types: msg.types,
             primaryType: msg.primaryType,
             message: msg.message,
-          });
+          } as Parameters<typeof walletClient.signTypedData>[0]);
 
           const signature = normalizeRecoveryByte(raw);
 
@@ -90,7 +95,7 @@ export default function PaymentForm() {
               primaryType: msg.primaryType,
               message: msg.message,
               signature,
-            });
+            } as Parameters<typeof publicClient.verifyTypedData>[0]);
           } catch (e) {
             console.warn("İmza yerel olarak doğrulanamadı (RPC hatası), devam ediliyor:", e);
           }
@@ -113,9 +118,10 @@ export default function PaymentForm() {
 
           return signature;
         },
-        readContract: async (args: any) => {
-          return await publicClient.readContract(args as any);
-        }
+        readContract: (args) =>
+          publicClient.readContract(
+            args as Parameters<typeof publicClient.readContract>[0]
+          ),
       };
 
       // 2. Initialize x402 client
@@ -126,8 +132,8 @@ export default function PaymentForm() {
       // The facilitator picks the protocol version, and x402Client throws
       // "No client registered for x402 version: N" when that version is missing,
       // so both are registered.
-      client.register("eip155:*", new ExactEvmScheme(clientSigner as any));
-      client.registerV1("base", new ExactEvmSchemeV1(clientSigner as any));
+      client.register("eip155:*", new ExactEvmScheme(clientSigner));
+      client.registerV1("base", new ExactEvmSchemeV1(clientSigner));
 
       // 4. Create an x402-wrapped fetch function
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
@@ -162,11 +168,11 @@ export default function PaymentForm() {
 
       let finalTxHash = "Payment successful (Tx managed by x402)";
       try {
-        const receipt = extractReceiptFromResponse(response as any);
+        const receipt = extractReceiptFromResponse(response);
         if (receipt) {
           const payload = extractReceiptPayload(receipt);
-          if (payload && (payload as any).transaction) {
-            finalTxHash = (payload as any).transaction;
+          if (payload?.transaction) {
+            finalTxHash = payload.transaction;
           }
         }
       } catch (e) {
