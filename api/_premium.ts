@@ -2,6 +2,10 @@ import express, { type Router } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import type { Network } from "@x402/core/types";
+import {
+  bazaarResourceServerExtension,
+  declareDiscoveryExtension,
+} from "@x402/extensions";
 import { createCdpFacilitatorClient, MissingConfigError } from "./_cdp-facilitator";
 
 /** Path of the x402-protected endpoint. */
@@ -39,8 +43,30 @@ function routes() {
           price: PRICE,
         },
       ],
-      description: "x402-pay demo endpoint",
+      description:
+        "Base mainnet üzerinde x402 ile ödenen demo endpoint; ödeme doğrulandıktan sonra JSON döner.",
       mimeType: "application/json",
+      serviceName: "x402-pay",
+      tags: ["x402", "base", "usdc", "demo"],
+      // Bazaar discovery metadata. Without this the endpoint still takes
+      // payments, but the facilitator will not index it and CDP's
+      // /v2/x402/validate reports has_bazaar_extension as failed.
+      // The HTTP method is deliberately omitted: bazaarResourceServerExtension
+      // fills it in from the route when it enriches the declaration.
+      extensions: declareDiscoveryExtension({
+        // A fixed sample, not premiumPayload(): the declaration is built once,
+        // so a live timestamp would freeze into the published discovery
+        // metadata and advertise a stale paidAt forever.
+        output: {
+          example: {
+            service: "x402-pay",
+            network: BASE_NETWORK,
+            price: PRICE,
+            paidAt: "2026-01-01T00:00:00.000Z",
+            message: "Ödeme doğrulandı ve Base üzerinde settle edildi.",
+          },
+        },
+      }),
     },
   };
 }
@@ -86,9 +112,11 @@ export function createPremiumRouter(): Router {
   const getPaymentMiddleware = () => {
     if (!pending) {
       pending = (async () => {
-        const server = new x402ResourceServer(
-          createCdpFacilitatorClient()
-        ).register(BASE_NETWORK, new ExactEvmScheme());
+        const server = new x402ResourceServer(createCdpFacilitatorClient())
+          .register(BASE_NETWORK, new ExactEvmScheme())
+          // Enriches the route's bazaar declaration and lets the facilitator
+          // index this resource after a settlement.
+          .registerExtension(bazaarResourceServerExtension);
 
         // Payment requirements cannot be built until the facilitator has
         // reported which scheme/network pairs it supports.

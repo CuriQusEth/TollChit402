@@ -32,6 +32,7 @@ hem **alıcı** hem **satıcı** tarafını içerir:
    | `CDP_API_KEY_ID` | CDP API anahtar kimliği ([CDP Portal](https://portal.cdp.coinbase.com)) |
    | `CDP_API_KEY_SECRET` | CDP API anahtar gizi |
    | `PAYMENT_RECIPIENT_ADDRESS` | Ödemelerin (USDC) gideceği Base adresi |
+   | `CDP_FACILITATOR_BASE_URL` | İsteğe bağlı. Farklı bir facilitator (staging/canary) hedeflemek için |
 
    `.env` git tarafından yok sayılır; anahtarlarınızı commit etmeyin.
 
@@ -51,6 +52,24 @@ npm start
 
 Vercel'de `/api/premium` serverless fonksiyon olarak çalışır ve geliştirme
 sunucusuyla aynı router'ı kullanır.
+
+## Bazaar keşfi
+
+`/api/premium`, 402 yanıtında `extensions.bazaar` metadata'sı yayımlar. Bu sayede
+facilitator, ödeme settle edildikten sonra endpoint'i indeksleyebilir ve alıcılar
+(ajanlar dahil) CDP'nin discovery API'lerinden bulabilir.
+
+## Endpoint doğrulama
+
+Dağıtımdan sonra endpoint'i CDP'nin doğrulayıcısına karşı kontrol edin:
+
+```bash
+npm run validate -- https://<alan-adiniz>/api/premium
+```
+
+`reachable`, `returns_402`, `has_bazaar_extension` ve `parse` kontrollerini
+raporlar. Ödeme yapmaz, kaynağı indekslemez ve CDP anahtarı gerektirmez; ancak
+endpoint herkese açık HTTPS üzerinden erişilebilir olmalıdır (localhost olmaz).
 
 ## Notlar
 

@@ -41,7 +41,11 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
     );
   }
 
-  const { host, pathname } = new URL(CDP_FACILITATOR_URL);
+  // Overridable so a staging/canary facilitator — or a local stub in tests —
+  // can be targeted. JWT signing derives host and paths from this URL, so it
+  // stays correctly bound to whatever is configured.
+  const baseUrl = process.env.CDP_FACILITATOR_BASE_URL || CDP_FACILITATOR_URL;
+  const { host, pathname } = new URL(baseUrl);
   const basePath = pathname.replace(/\/$/, "");
 
   // Each operation is signed for its own path, so a token minted for /verify is
@@ -60,7 +64,7 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
   });
 
   return new HTTPFacilitatorClient({
-    url: CDP_FACILITATOR_URL,
+    url: baseUrl,
     createAuthHeaders: async () => {
       const [verify, settle, supported] = await Promise.all([
         authHeadersFor(`${basePath}/verify`),

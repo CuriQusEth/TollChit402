@@ -9,7 +9,8 @@
     "start": "cross-env NODE_ENV=production node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "validate": "node scripts/validate-endpoint.mjs"
   },
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.55.0",
