@@ -1,15 +1,15 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import http from "http";
 import https from "https";
 import dotenv from "dotenv";
+import { copyResponseHeaders } from "./api/_proxy";
 
 dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use("/api/cambrian", (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -55,10 +55,8 @@ async function startServer() {
         headers,
       },
       (proxyRes) => {
-        res.status(proxyRes.statusCode || 500);
-        for (const [k, val] of Object.entries(proxyRes.headers)) {
-          if (val !== undefined) res.setHeader(k, val as string);
-        }
+        res.status(proxyRes.statusCode || 502);
+        copyResponseHeaders(proxyRes.headers, (k, v) => res.setHeader(k, v));
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader(
           "Access-Control-Expose-Headers",
@@ -108,10 +106,8 @@ async function startServer() {
         headers,
       },
       (proxyRes) => {
-        res.status(proxyRes.statusCode || 500);
-        for (const [k, val] of Object.entries(proxyRes.headers)) {
-          if (val !== undefined) res.setHeader(k, val as string);
-        }
+        res.status(proxyRes.statusCode || 502);
+        copyResponseHeaders(proxyRes.headers, (k, v) => res.setHeader(k, v));
         proxyRes.pipe(res);
       }
     );
@@ -144,4 +140,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});

@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
-import { Loader2, Wallet, ArrowRight, CheckCircle2, AlertCircle, ExternalLink, LogOut } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
+import { ExactEvmSchemeV1 } from '@x402/evm/v1';
 import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensions';
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const BASE_CHAIN_ID = 8453;
 
 export default function PaymentForm() {
   const { address, isConnected } = useAccount();
@@ -21,19 +23,14 @@ export default function PaymentForm() {
   const [error, setError] = useState<string | null>(null);
 
   const handlePay = async () => {
-    if (!isConnected) {
-      connect({ connector: connectors[0] }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) });
-      return;
-    }
-    
     if (!walletClient || !publicClient) {
       setError("Cüzdan bağlantısı bekleniyor. Lütfen tekrar deneyin.");
       return;
     }
     
-    if (walletClient.chain.id !== 8453) {
+    if (walletClient.chain?.id !== BASE_CHAIN_ID) {
       try {
-        await switchChainAsync({ chainId: 8453 });
+        await switchChainAsync({ chainId: BASE_CHAIN_ID });
         setError("Ağ Base olarak değiştirildi. Lütfen işlemi tekrar başlatın.");
         return;
       } catch (err: any) {
@@ -70,14 +67,19 @@ export default function PaymentForm() {
       // 2. Initialize x402 client
       const client = new x402Client();
 
-      // Register the v2 EVM scheme (CAIP-2 networks, e.g. future/other facilitators)
+      // 3. Register the payment schemes.
+      // v2 uses CAIP-2 network ids ("eip155:8453"); v1 uses plain names ("base").
+      // The facilitator picks the protocol version, and x402Client throws
+      // "No client registered for x402 version: N" when that version is missing,
+      // so both are registered.
       client.register("eip155:*", new ExactEvmScheme(clientSigner as any));
+      client.registerV1("base", new ExactEvmSchemeV1(clientSigner as any));
 
       // 4. Create an x402-wrapped fetch function
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
       // 5. Execute payment against Cambrian API
-      const apiUrl = '/api/cambrian/evm/price-current?address=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chain=base';
+      const apiUrl = `/api/cambrian/evm/price-current?address=${USDC_BASE}&chain=base`;
       const response = await fetchWithPayment(apiUrl, {
         method: 'GET'
       });
@@ -166,7 +168,7 @@ export default function PaymentForm() {
               <span className="font-bold text-white">Base USDC</span>
             </div>
             <button
-              onClick={isConnected ? handlePay : () => {}}
+              onClick={handlePay}
               disabled={isPaying || !isConnected}
               className={`w-full ${!isConnected ? 'bg-[#222] text-gray-500' : 'bg-emerald-500 hover:bg-emerald-400 text-black'} disabled:opacity-50 font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2`}
             >

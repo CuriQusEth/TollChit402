@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'https';
+import { copyResponseHeaders } from './_proxy';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -53,12 +54,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       headers,
     },
     (proxyRes) => {
-      res.status(proxyRes.statusCode || 500);
-      for (const [k, val] of Object.entries(proxyRes.headers)) {
-        if (val !== undefined) {
-          res.setHeader(k, val as string);
-        }
-      }
+      res.status(proxyRes.statusCode || 502);
+      copyResponseHeaders(proxyRes.headers, (k, v) => res.setHeader(k, v));
 
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader(

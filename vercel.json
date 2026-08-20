@@ -5,6 +5,10 @@
       "destination": "/api/cambrian-proxy"
     },
     {
+      "source": "/api/data/:path*",
+      "destination": "/api/data-proxy"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

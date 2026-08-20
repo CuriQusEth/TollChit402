@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Loader2, Search, Database, Terminal } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, Database, Terminal } from 'lucide-react';
 
 export default function CambrianData() {
   const [activeTab, setActiveTab] = useState<'price' | 'block' | 'tokens' | 'evm_curators'>('price');
@@ -66,8 +66,8 @@ export default function CambrianData() {
           Token List
         </button>
         <button 
-          onClick={() => { setActiveTab('evm_curators' as any); fetchData(endpoints.evm_curators); }}
-          className={`px-4 py-2 text-xs uppercase tracking-widest border transition-colors ${activeTab === 'evm_curators' as any ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-transparent border-[#333] text-gray-400 hover:border-gray-500'}`}
+          onClick={() => { setActiveTab('evm_curators'); fetchData(endpoints.evm_curators); }}
+          className={`px-4 py-2 text-xs uppercase tracking-widest border transition-colors ${activeTab === 'evm_curators' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-transparent border-[#333] text-gray-400 hover:border-gray-500'}`}
         >
           Base Morpho
         </button>
