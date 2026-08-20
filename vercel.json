@@ -1,15 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/api/cambrian/:path*",
-      "destination": "/api/cambrian-proxy"
-    },
-    {
-      "source": "/api/data/:path*",
-      "destination": "/api/data-proxy"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]

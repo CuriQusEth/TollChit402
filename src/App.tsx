@@ -2,7 +2,6 @@ import { WagmiProvider, useAccount } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { config } from './wagmi';
 import PaymentForm from './components/PaymentForm';
-import CambrianData from './components/CambrianData';
 
 const queryClient = new QueryClient();
 
@@ -89,10 +88,6 @@ export default function App() {
               <div className="md:col-span-5 relative z-20">
                 <PaymentForm />
               </div>
-            </div>
-            
-            <div className="z-10 w-full px-6 md:px-12 mt-12 pb-12">
-               <CambrianData />
             </div>
           </main>
           

@@ -7,7 +7,6 @@ import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { ExactEvmSchemeV1 } from '@x402/evm/v1';
 import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensions';
 
-const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASE_CHAIN_ID = 8453;
 
 /**
@@ -138,8 +137,8 @@ export default function PaymentForm() {
       // 4. Create an x402-wrapped fetch function
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
-      // 5. Execute payment against Cambrian API
-      const apiUrl = `/api/cambrian/evm/price-current?address=${USDC_BASE}&chain=base`;
+      // 5. Pay this app's own x402-protected endpoint, settled by the CDP facilitator
+      const apiUrl = '/api/premium';
       const response = await fetchWithPayment(apiUrl, {
         method: 'GET'
       });
