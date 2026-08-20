@@ -9,6 +9,20 @@ import { extractReceiptFromResponse, extractReceiptPayload } from '@x402/extensi
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASE_CHAIN_ID = 8453;
 
+/**
+ * Some wallets return the EIP-712 recovery byte (`v`) as 0x00/0x01 rather than
+ * the 0x1b/0x1c that ecrecover expects, which makes the facilitator reject an
+ * otherwise valid signature. Signatures of any other shape (notably ERC-1271 /
+ * ERC-6492 blobs from smart-contract accounts) are passed through untouched.
+ */
+function normalizeRecoveryByte(signature: `0x${string}`): `0x${string}` {
+  if (signature.length !== 132) return signature;
+  const v = signature.slice(-2).toLowerCase();
+  if (v === "00") return `${signature.slice(0, -2)}1b` as `0x${string}`;
+  if (v === "01") return `${signature.slice(0, -2)}1c` as `0x${string}`;
+  return signature;
+}
+
 export default function PaymentForm() {
   const { address, isConnected } = useAccount();
   const { connectors, connect, isPending: isConnecting } = useConnect();
@@ -48,16 +62,56 @@ export default function PaymentForm() {
       const clientSigner = {
         address: walletClient.account.address,
         signTypedData: async (msg: any) => {
-          console.log("Signing msg:", msg);
-          const sig = await walletClient.signTypedData({
+          const raw = await walletClient.signTypedData({
             account: walletClient.account,
             domain: msg.domain,
             types: msg.types,
             primaryType: msg.primaryType,
             message: msg.message,
           });
-          console.log("Got signature:", sig);
-          return sig;
+
+          const signature = normalizeRecoveryByte(raw);
+
+          // The facilitator settles the EIP-3009 authorization by recovering the
+          // payer from this signature. Verifying it here first turns an opaque
+          // "invalid_exact_evm_signature" 402 into an actionable message, and
+          // catches the two ways a browser wallet breaks this:
+          //   - a smart-contract account signs via ERC-1271/6492, producing a
+          //     blob that is not a 65-byte recoverable signature;
+          //   - the wallet signs with an account other than the connected one.
+          // An RPC hiccup must never block a payment that would have succeeded,
+          // so only a definitive `false` is treated as a failure.
+          let verified: boolean | null = null;
+          try {
+            verified = await publicClient.verifyTypedData({
+              address: walletClient.account.address,
+              domain: msg.domain,
+              types: msg.types,
+              primaryType: msg.primaryType,
+              message: msg.message,
+              signature,
+            });
+          } catch (e) {
+            console.warn("İmza yerel olarak doğrulanamadı (RPC hatası), devam ediliyor:", e);
+          }
+
+          if (verified === false) {
+            if (signature.length !== 132) {
+              throw new Error(
+                "Bu cüzdan akıllı kontrat hesabı imzası (ERC-1271/6492) üretti. " +
+                "x402 EIP-3009 ödemesi, imzadan çözümlenebilen standart bir EOA hesabı gerektirir. " +
+                "Lütfen normal bir cüzdan hesabıyla bağlanın."
+              );
+            }
+            throw new Error(
+              "Cüzdanın ürettiği imza ödeme yapan adrese çözümlenmiyor. " +
+              "Cüzdanınızda imzalayan hesabın bağlı hesapla (" +
+              `${walletClient.account.address.slice(0, 6)}...${walletClient.account.address.slice(-4)}) ` +
+              "aynı olduğundan emin olun."
+            );
+          }
+
+          return signature;
         },
         readContract: async (args: any) => {
           return await publicClient.readContract(args as any);
@@ -90,6 +144,15 @@ export default function PaymentForm() {
           errorBody = await response.text();
         } catch (e) {}
         
+        if (errorBody.includes("invalid_exact_evm_signature")) {
+          throw new Error(
+            "Ödeme imzası facilitator tarafından reddedildi. Bu genellikle imzanın " +
+            "ödeme yapan adrese çözümlenmemesinden kaynaklanır: akıllı kontrat " +
+            "cüzdanları (ERC-1271/6492) yerine standart bir EOA hesabı kullanın ve " +
+            "cüzdanınızda Base ağının seçili olduğundan emin olun."
+          );
+        }
+
         if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
           throw new Error("Ödeme simülasyonu başarısız oldu. Base ağında yeterli USDC bakiyeniz (en az 0.05 USDC) olduğundan emin olun.");
         }
