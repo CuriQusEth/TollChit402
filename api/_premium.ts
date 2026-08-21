@@ -3,13 +3,19 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import type { Network } from "@x402/core/types";
 import {
+  BUILDER_CODE,
   bazaarResourceServerExtension,
+  builderCodeResourceServerExtension,
+  declareBuilderCodeExtension,
   declareDiscoveryExtension,
 } from "@x402/extensions";
 import { createCdpFacilitatorClient, MissingConfigError } from "./_cdp-facilitator";
 
 /** Path of the x402-protected endpoint. */
 export const PREMIUM_ROUTE = "/api/premium";
+
+/** A2A agent discovery document. */
+export const AGENT_CARD_ROUTE = "/.well-known/agent-card.json";
 
 /** Base mainnet, CAIP-2. The CDP facilitator settles `exact` payments here. */
 export const BASE_NETWORK: Network = "eip155:8453";
@@ -31,8 +37,35 @@ function getPaymentRecipient(): string {
   return payTo;
 }
 
+/**
+ * ERC-8021 app builder code, attributing settlements of this endpoint on Base.
+ *
+ * This is the `a` (app) field of Schema 2 — "the x402 service that exposed the
+ * paid endpoint" — which is what this project is, since it owns the endpoint.
+ * It is set by the server in the 402 response, not by the client: the client
+ * side (`BuilderCodeClientExtension`) fills the separate `s` field, which is
+ * for a third party attributing itself while paying someone else's endpoint.
+ *
+ * The facilitator combines this with its own code and encodes the suffix into
+ * the settlement calldata, so nothing needs to be encoded here.
+ */
+function getBuilderCode(): string | undefined {
+  const code = process.env.BUILDER_CODE?.trim();
+  if (!code) return undefined;
+
+  // Same constraint the extension schema enforces; failing early beats having
+  // the facilitator reject the payment.
+  if (!/^[a-z0-9_]{1,32}$/.test(code)) {
+    throw new MissingConfigError(
+      `BUILDER_CODE geçersiz: "${code}". 1-32 karakter, yalnızca küçük harf, rakam ve alt çizgi olmalı.`
+    );
+  }
+  return code;
+}
+
 /** Route configuration for the paid endpoint. */
 function routes() {
+  const builderCode = getBuilderCode();
   return {
     [PREMIUM_ROUTE]: {
       accepts: [
@@ -53,7 +86,11 @@ function routes() {
       // /v2/x402/validate reports has_bazaar_extension as failed.
       // The HTTP method is deliberately omitted: bazaarResourceServerExtension
       // fills it in from the route when it enriches the declaration.
-      extensions: declareDiscoveryExtension({
+      extensions: {
+        ...(builderCode
+          ? { [BUILDER_CODE]: declareBuilderCodeExtension(builderCode) }
+          : {}),
+        ...declareDiscoveryExtension({
         // A fixed sample, not premiumPayload(): the declaration is built once,
         // so a live timestamp would freeze into the published discovery
         // metadata and advertise a stale paidAt forever.
@@ -66,7 +103,8 @@ function routes() {
             message: "Ödeme doğrulandı ve Base üzerinde settle edildi.",
           },
         },
-      }),
+        }),
+      },
     },
   };
 }
@@ -80,6 +118,57 @@ function premiumPayload() {
     paidAt: new Date().toISOString(),
     message:
       "Ödeme doğrulandı ve Base üzerinde settle edildi. Bu içerik yalnızca ödeme sonrası döner.",
+  };
+}
+
+/**
+ * A2A agent card describing this service and its x402 payment requirement.
+ *
+ * Built from the same constants as the paid route and from the request's own
+ * origin rather than a hard-coded host, so a deployment never advertises a URL
+ * it does not answer on.
+ */
+function agentCard(origin: string) {
+  return {
+    name: "x402 Pay Gateway",
+    description:
+      "Base Mainnet üzerinde x402 protokolü (EIP-3009 'exact' şeması) ile USDC mikro ödemesi karşılığında erişilen demo endpoint.",
+    version: "2.0.0",
+    url: `${origin}${PREMIUM_ROUTE}`,
+    provider: {
+      organization: "x402 Development Group",
+      url: origin,
+    },
+    capabilities: { streaming: false, pushNotifications: false },
+    defaultInputModes: ["application/json"],
+    defaultOutputModes: ["application/json"],
+    supportedInterfaces: [
+      {
+        url: `${origin}${PREMIUM_ROUTE}`,
+        protocolBinding: "HTTP+x402",
+        protocolVersion: "2",
+      },
+    ],
+    skills: [
+      {
+        id: "premium-demo",
+        name: "x402 Demo Endpoint",
+        description: `Ödeme doğrulandıktan sonra JSON döner. x402 ile ödeme gerektirir (${PRICE}, Base Mainnet, EIP-3009 'exact' şeması).`,
+        tags: ["x402", "base", "usdc", "payment-required"],
+        examples: [`GET ${PREMIUM_ROUTE}`],
+      },
+    ],
+    security: [
+      {
+        x402: {
+          scheme: "exact",
+          network: BASE_NETWORK,
+          asset: "USDC",
+          description:
+            "Bu endpoint HTTP 402 Payment Required döner; istemcinin EIP-3009 imzalı bir yetkilendirme ile tekrar istek göndermesi gerekir.",
+        },
+      },
+    ],
   };
 }
 
@@ -116,7 +205,9 @@ export function createPremiumRouter(): Router {
           .register(BASE_NETWORK, new ExactEvmScheme())
           // Enriches the route's bazaar declaration and lets the facilitator
           // index this resource after a settlement.
-          .registerExtension(bazaarResourceServerExtension);
+          .registerExtension(bazaarResourceServerExtension)
+          // Merges the declared app code into the payload the facilitator settles.
+          .registerExtension(builderCodeResourceServerExtension);
 
         // Payment requirements cannot be built until the facilitator has
         // reported which scheme/network pairs it supports.
@@ -158,6 +249,13 @@ export function createPremiumRouter(): Router {
 
   router.get(PREMIUM_ROUTE, (_req, res) => {
     res.json(premiumPayload());
+  });
+
+  router.get(AGENT_CARD_ROUTE, (req, res) => {
+    // x-forwarded-proto is what tells us the scheme behind Vercel's TLS
+    // termination; req.protocol alone would report http there.
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol;
+    res.json(agentCard(`${proto}://${req.get("host")}`));
   });
 
   return router;

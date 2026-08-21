@@ -33,6 +33,7 @@ hem **alıcı** hem **satıcı** tarafını içerir:
    | `CDP_API_KEY_SECRET` | CDP API anahtar gizi |
    | `PAYMENT_RECIPIENT_ADDRESS` | Ödemelerin (USDC) gideceği Base adresi |
    | `CDP_FACILITATOR_BASE_URL` | İsteğe bağlı. Farklı bir facilitator (staging/canary) hedeflemek için |
+   | `BUILDER_CODE` | İsteğe bağlı. ERC-8021 Base Builder Code ([base.dev](https://base.dev) → Builder Codes) |
 
    `.env` git tarafından yok sayılır; anahtarlarınızı commit etmeyin.
 
@@ -58,6 +59,25 @@ sunucusuyla aynı router'ı kullanır.
 `/api/premium`, 402 yanıtında `extensions.bazaar` metadata'sı yayımlar. Bu sayede
 facilitator, ödeme settle edildikten sonra endpoint'i indeksleyebilir ve alıcılar
 (ajanlar dahil) CDP'nin discovery API'lerinden bulabilir.
+
+## Builder Code (ERC-8021)
+
+`BUILDER_CODE` tanımlıysa, 402 yanıtına Schema 2'nin `a` (app) alanı eklenir ve
+facilitator bunu settlement calldata'sına gömer — böylece bu endpoint'in Base
+üzerindeki ödemeleri uygulamanıza atfedilir.
+
+`a` alanı sunucu tarafına aittir: endpoint'i sunan taraf onu 402 yanıtında
+bildirir. İstemci tarafındaki `BuilderCodeClientExtension` ise ayrı olan `s`
+alanını doldurur ve başkasının endpoint'ine ödeme yaparken kendini atfeden
+üçüncü taraflar içindir — bu proje kendi endpoint'ine sahip olduğu için `a`
+doğru alandır.
+
+## Ajan keşfi (A2A)
+
+`/.well-known/agent-card.json`, servisi ve x402 ödeme gerekliliğini tanımlayan
+A2A uyumlu bir kart döner. Kart, sabit bir adres yerine isteğin kendi origin'inden
+üretilir (Vercel'in TLS sonlandırması için `x-forwarded-proto` dikkate alınır),
+böylece dağıtım hiçbir zaman cevap vermediği bir URL'i duyurmaz.
 
 ## Endpoint doğrulama
 
