@@ -38,6 +38,13 @@ function getPaymentRecipient(): string {
 }
 
 /**
+ * This project's Base builder code. A builder code is public attribution data,
+ * not a credential, so it lives in the repository as the default and only needs
+ * BUILDER_CODE set to attribute a fork to someone else.
+ */
+const DEFAULT_BUILDER_CODE = "bc_g6baqkul";
+
+/**
  * ERC-8021 app builder code, attributing settlements of this endpoint on Base.
  *
  * This is the `a` (app) field of Schema 2 — "the x402 service that exposed the
@@ -50,7 +57,10 @@ function getPaymentRecipient(): string {
  * the settlement calldata, so nothing needs to be encoded here.
  */
 function getBuilderCode(): string | undefined {
-  const code = process.env.BUILDER_CODE?.trim();
+  // An explicitly empty BUILDER_CODE disables attribution; unset falls back to
+  // this project's own code.
+  const configured = process.env.BUILDER_CODE?.trim();
+  const code = configured === undefined ? DEFAULT_BUILDER_CODE : configured;
   if (!code) return undefined;
 
   // Same constraint the extension schema enforces; failing early beats having
