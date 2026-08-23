@@ -1,6 +1,51 @@
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { generateJwt } from "@coinbase/cdp-sdk/auth";
 
+const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+
+/** Bare key id, the form the CDP portal shows for newer keys. */
+const PLAIN_KEY_ID = new RegExp(`^${UUID}$`);
+
+/** Canonical full form: organizations/{org}/apiKeys/{key}. */
+const FULL_KEY_ID = new RegExp(`^organizations/${UUID}/apiKeys/${UUID}$`);
+
+/**
+ * Same shape as the full form but with either label replaced.
+ *
+ * The CDP portal translates its labels, so a browser set to another language
+ * yields e.g. "kuruluşlar/{org}/apiKeys/{key}". The SDK does not validate the
+ * id — it signs whatever it is given into the JWT `sub` — so a translated value
+ * fails later as an opaque authentication error. Two UUIDs in a four-segment
+ * path is unmistakable, so the labels are restored rather than rejected.
+ */
+const LOCALISED_KEY_ID = new RegExp(`^[^/]+/(${UUID})/[^/]+/(${UUID})$`);
+
+/**
+ * Normalises CDP_API_KEY_ID to a form the CDP API accepts.
+ *
+ * @param raw - The configured value.
+ * @returns The canonical key id.
+ */
+function normaliseApiKeyId(raw: string): string {
+  if (PLAIN_KEY_ID.test(raw) || FULL_KEY_ID.test(raw)) return raw;
+
+  const localised = raw.match(LOCALISED_KEY_ID);
+  if (localised) {
+    const canonical = `organizations/${localised[1]}/apiKeys/${localised[2]}`;
+    console.warn(
+      `[cdp] CDP_API_KEY_ID yerelleştirilmiş etiketler içeriyordu ("${raw.split("/")[0]}/…"). ` +
+        "CDP portalı tarayıcı diline göre etiketleri çeviriyor; değer " +
+        "organizations/…/apiKeys/… biçimine düzeltildi."
+    );
+    return canonical;
+  }
+
+  throw new MissingConfigError(
+    `CDP_API_KEY_ID biçimi tanınmadı: "${raw}". Beklenen biçim ` +
+      "organizations/<org-uuid>/apiKeys/<key-uuid> ya da yalnızca <key-uuid>."
+  );
+}
+
 /** Thrown when required environment configuration is absent. */
 export class MissingConfigError extends Error {
   constructor(message: string) {
@@ -45,6 +90,8 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
   // can be targeted. JWT signing derives host and paths from this URL, so it
   // stays correctly bound to whatever is configured.
   const baseUrl = process.env.CDP_FACILITATOR_BASE_URL || CDP_FACILITATOR_URL;
+  const keyId = normaliseApiKeyId(apiKeyId);
+
   const { host, pathname } = new URL(baseUrl);
   const basePath = pathname.replace(/\/$/, "");
 
@@ -55,7 +102,7 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
     method: "POST" | "GET" = "POST"
   ) => ({
     Authorization: `Bearer ${await generateJwt({
-      apiKeyId,
+      apiKeyId: keyId,
       apiKeySecret,
       requestMethod: method,
       requestHost: host,

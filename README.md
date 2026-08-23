@@ -35,6 +35,12 @@ hem **alıcı** hem **satıcı** tarafını içerir:
    | `CDP_FACILITATOR_BASE_URL` | İsteğe bağlı. Farklı bir facilitator (staging/canary) hedeflemek için |
    | `BUILDER_CODE` | İsteğe bağlı. ERC-8021 Base Builder Code; tanımsızsa projenin kendi kodu kullanılır |
 
+   `CDP_API_KEY_ID` iki biçimi de kabul eder:
+   `organizations/<org-uuid>/apiKeys/<key-uuid>` veya yalnızca `<key-uuid>`.
+   CDP portalı etiketleri tarayıcı diline göre çevirdiği için kopyaladığınız
+   değer `kuruluşlar/...` gibi görünebilir; bu durumda değer otomatik olarak
+   düzeltilir ve bir uyarı yazılır. Tanınmayan bir biçim ise açık bir hata verir.
+
    `.env` git tarafından yok sayılır; anahtarlarınızı commit etmeyin.
 
 3. Geliştirme sunucusunu başlatın:
