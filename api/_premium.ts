@@ -4,7 +4,6 @@ import { ExactEvmScheme } from "@x402/evm/exact/server";
 import type { Network } from "@x402/core/types";
 import {
   BUILDER_CODE,
-  bazaarResourceServerExtension,
   builderCodeResourceServerExtension,
   declareBuilderCodeExtension,
   declareDiscoveryExtension,
@@ -77,7 +76,10 @@ function getBuilderCode(): string | undefined {
 function routes() {
   const builderCode = getBuilderCode();
   return {
-    [PREMIUM_ROUTE]: {
+    // The verb prefix matters: a bare path is stored with verb "*", which gates
+    // every method. Only GET is served, so without it a client could pay for a
+    // POST and then get a 404.
+    [`GET ${PREMIUM_ROUTE}`]: {
       accepts: [
         {
           scheme: "exact",
@@ -215,8 +217,9 @@ export function createPremiumRouter(): Router {
           .register(BASE_NETWORK, new ExactEvmScheme())
           // Enriches the route's bazaar declaration and lets the facilitator
           // index this resource after a settlement.
-          .registerExtension(bazaarResourceServerExtension)
-          // Merges the declared app code into the payload the facilitator settles.
+          // bazaarResourceServerExtension is not registered here: the express
+          // adapter registers it itself whenever a route declares the bazaar
+          // extension, and registering it twice is pointless.
           .registerExtension(builderCodeResourceServerExtension);
 
         // Payment requirements cannot be built until the facilitator has

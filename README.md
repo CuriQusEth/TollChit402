@@ -95,6 +95,13 @@ npm run validate -- https://<alan-adiniz>/api/premium
 raporlar. Ödeme yapmaz, kaynağı indekslemez ve CDP anahtarı gerektirmez; ancak
 endpoint herkese açık HTTPS üzerinden erişilebilir olmalıdır (localhost olmaz).
 
+## Protokol kaynağı
+
+x402 protokolünün ve kullanılan `@x402/*` paketlerinin resmî deposu:
+[x402-foundation/x402](https://github.com/x402-foundation/x402) (eski adresi
+`coinbase/x402`; Coinbase protokolü x402 Foundation'a devretti). Spesifikasyonlar
+`specs/`, referans sunucu örnekleri `examples/typescript/servers/` altında.
+
 ## Notlar
 
 - Proje gerçek mainnet üzerinde çalışacak şekilde yapılandırılmıştır: gerçek USDC
