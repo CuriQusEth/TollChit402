@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { createPremiumRouter, PREMIUM_ROUTE } from "./api/_premium";
+import { createPremiumRouter, PREMIUM_ROUTE } from "./api/_premium.js";
 
 dotenv.config();
 

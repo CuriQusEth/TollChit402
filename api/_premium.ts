@@ -8,7 +8,7 @@ import {
   declareBuilderCodeExtension,
   declareDiscoveryExtension,
 } from "@x402/extensions";
-import { createCdpFacilitatorClient, MissingConfigError } from "./_cdp-facilitator";
+import { createCdpFacilitatorClient, MissingConfigError } from "./_cdp-facilitator.js";
 
 /** Path of the x402-protected endpoint. */
 export const PREMIUM_ROUTE = "/api/premium";

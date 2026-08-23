@@ -1,5 +1,5 @@
 import express from "express";
-import { createPremiumRouter } from "./_premium";
+import { createPremiumRouter } from "./_premium.js";
 
 /**
  * Vercel entry point for the x402-protected endpoint.
