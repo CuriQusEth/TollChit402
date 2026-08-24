@@ -110,7 +110,7 @@ function resolvePaymentRecipient(context: HTTPRequestContext): string {
  * not a credential, so it lives in the repository as the default and only needs
  * BUILDER_CODE set to attribute a fork to someone else.
  */
-const DEFAULT_BUILDER_CODE = "bc_g6baqkul";
+const DEFAULT_BUILDER_CODE = "bc_tgwm7zpr";
 
 /**
  * ERC-8021 app builder code, attributing settlements of this endpoint on Base.
