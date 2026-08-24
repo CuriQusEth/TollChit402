@@ -45,9 +45,6 @@ export const STATS_ROUTE = "/api/stats";
 /** Base mainnet, CAIP-2. The CDP facilitator settles `exact` payments here. */
 export const BASE_NETWORK: Network = "eip155:8453";
 
-/** Price per request, in the x402 `Money` form. */
-export const PRICE = "$0.05";
-
 /** Header the UI uses to name the wallet a payment should go to. */
 export const RECIPIENT_HEADER = "x-payment-recipient";
 

@@ -180,7 +180,7 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
     if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
       throw new Error(
         `Ödeme simülasyonu başarısız oldu. ${account.address} adresinde Base ağında ` +
-          "yeterli USDC bakiyesi (en az 0.05 USDC) olduğundan emin olun."
+          "seçilen paket için yeterli USDC bakiyesi olduğundan emin olun."
       );
     }
     throw new Error(
@@ -231,7 +231,7 @@ server.tool(
       .enum(["basic", "pro", "metered"])
       .optional()
       .describe(
-        "İsteğe bağlı paket. basic $0.05, pro $0.25 sabit ücretlidir; " +
+        "İsteğe bağlı paket. basic $0.001, pro $0.25 sabit ücretlidir; " +
           "metered en fazla $0.50 yetkilendirir ve yalnızca kullanılan " +
           "birimleri tahsil eder. Varsayılan: basic."
       ),

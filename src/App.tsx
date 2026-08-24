@@ -68,7 +68,7 @@ export default function App() {
                 <h1 className="text-[80px] md:text-[130px] font-black leading-[0.85] tracking-tighter uppercase">
                   <span className="block">Pay</span>
                   <span className="block text-transparent break-all" style={{ WebkitTextStroke: '1px #10b981' }}>
-                    $0.05
+                    $0.001
                   </span>
                 </h1>
                 <p className="text-gray-400 text-lg mt-6 max-w-md font-light">

@@ -18,7 +18,6 @@ import {
 } from '../lib/paymentHistory';
 
 const BASE_CHAIN_ID = 8453;
-const PRICE_LABEL = '$0.05';
 const NETWORK = 'eip155:8453';
 
 /** Ödemenin hangi aşamada olduğunu kullanıcıya göstermek için. */
@@ -55,7 +54,7 @@ function normalizeRecoveryByte(signature: `0x${string}`): `0x${string}` {
  * değildir, yetersiz bakiye ise cüzdana para koymayı gerektirir. Cüzdanlar reddi
  * EIP-1193'ün 4001 koduyla bildirir; kod taşımayanlar için metne bakılır.
  */
-function describePaymentError(err: unknown): string {
+function describePaymentError(err: unknown, priceLabel: string): string {
   const error = err as { code?: number; message?: string; cause?: { code?: number } };
   const code = error?.code ?? error?.cause?.code;
   const raw = error?.message ?? '';
@@ -65,7 +64,7 @@ function describePaymentError(err: unknown): string {
   }
 
   if (/insufficient (funds|balance)|transfer amount exceeds balance/i.test(raw)) {
-    return 'Yetersiz bakiye. Base ağında en az 0.05 USDC bulundurmanız gerekiyor.';
+    return `Yetersiz bakiye. Base ağında bu paket için en az ${priceLabel} tutarında USDC bulundurmanız gerekiyor.`;
   }
 
   return raw || 'Bilinmeyen bir hata oluştu.';
@@ -321,7 +320,7 @@ export default function PaymentForm() {
         }
 
         if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
-          throw new Error("Ödeme simülasyonu başarısız oldu. Base ağında yeterli USDC bakiyeniz (en az 0.05 USDC) olduğundan emin olun.");
+          throw new Error(`Ödeme simülasyonu başarısız oldu. Base ağında yeterli USDC bakiyeniz (bu paket için en az ${tier.price}) olduğundan emin olun.`);
         }
         
         throw new Error(`Sunucu Hatası: ${response.status} ${response.statusText} - ${errorBody}`);
@@ -368,7 +367,7 @@ export default function PaymentForm() {
 
     } catch (err) {
       console.error("Tam hata:", err);
-      const message = describePaymentError(err);
+      const message = describePaymentError(err, tier.price);
       setFailedAt(step === 'error' ? failedAt : step);
       setStep('error');
       setError(message);

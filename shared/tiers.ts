@@ -15,7 +15,7 @@ export const TIERS = [
     id: "basic",
     route: "/api/premium",
     scheme: "exact",
-    price: "$0.05",
+    price: "$0.001",
     label: "Basic",
     description:
       "Base mainnet üzerinde x402 ile ödenen demo endpoint; ödeme doğrulandıktan sonra JSON döner.",

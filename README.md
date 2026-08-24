@@ -9,7 +9,7 @@ hem **alıcı** hem **satıcı** tarafını içerir:
 
 ## Özellikler
 
-- Base Mainnet üzerinde USDC ile mikro ödemeler (istek başına $0.05).
+- Base Mainnet üzerinde USDC ile mikro ödemeler (Basic pakette istek başına $0.001).
 - Doğrudan tarayıcı cüzdanı entegrasyonu (MetaMask, Rabby, Coinbase Wallet).
 - Ödeme doğrulama ve settlement için CDP Facilitator; kendi facilitator'ınızı
   işletmeniz gerekmez.
@@ -75,7 +75,7 @@ yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
 
 | Paket | Yol | Şema | Fiyat |
 | --- | --- | --- | --- |
-| Basic | `/api/premium` | `exact` | $0.05 |
+| Basic | `/api/premium` | `exact` | $0.001 |
 | Pro | `/api/premium/pro` | `exact` | $0.25 |
 | Metered | `/api/premium/metered?units=N` | `upto` | en fazla $0.50 |
 
