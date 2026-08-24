@@ -71,6 +71,35 @@ demosudur — gelir toplama yolu değil, çünkü ziyaretçi kendi cüzdanını
 yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
 `PAYMENT_RECIPIENT_ADDRESS` tanımlayın ve arayüzdeki alanı kaldırın.
 
+## Paketler
+
+| Paket | Yol | Şema | Fiyat |
+| --- | --- | --- | --- |
+| Basic | `/api/premium` | `exact` | $0.05 |
+| Pro | `/api/premium/pro` | `exact` | $0.25 |
+| Metered | `/api/premium/metered?units=N` | `upto` | en fazla $0.50 |
+
+`metered`, `upto` şemasını kullanır: istemci bir tavan yetkilendirir, sunucu
+`?units=` değerinden gerçek tutarı hesaplayıp `setSettlementOverrides` ile
+tahsil eder. Talep edilen birim sayısı tavana kırpılır, çünkü yetkilendirilenin
+üstünde bir settlement reddedilir.
+
+Paket tablosu `shared/tiers.ts` içindedir; sunucu, tarayıcı ve agent card aynı
+kaynaktan okur.
+
+## İstatistikler
+
+`GET /api/stats`, toplam ödeme sayısını ve USDC hacmini döner. Vercel KV
+bağlıysa sayaçlar kalıcıdır; değilse bellekte tutulur ve her yeniden başlatmada
+sıfırlanır — yanıttaki `persistent` alanı hangisinin geçerli olduğunu söyler.
+Yalnızca doğrulanmış ödemeler sayılır; 402 dönen istekler sayılmaz.
+
+## MCP sunucusu
+
+`mcp-server/` altındaki bağımsız paket bu endpoint'i bir MCP aracı olarak sunar;
+Claude gibi ajanlar ödemeyi kendi cüzdanlarından otomatik yapar. Kurulum için
+`mcp-server/README.md`.
+
 ## Bazaar keşfi
 
 `/api/premium`, 402 yanıtında `extensions.bazaar` metadata'sı yayımlar. Bu sayede

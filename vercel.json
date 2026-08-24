@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/premium/:path*",
+      "destination": "/api/premium"
+    },
+    {
+      "source": "/api/stats",
+      "destination": "/api/premium"
+    },
+    {
       "source": "/.well-known/agent-card.json",
       "destination": "/api/premium"
     },

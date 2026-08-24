@@ -2,6 +2,7 @@ import { WagmiProvider, useAccount } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { config } from './wagmi';
 import PaymentForm from './components/PaymentForm';
+import StatsWidget from './components/StatsWidget';
 
 const queryClient = new QueryClient();
 
@@ -90,7 +91,9 @@ export default function App() {
               </div>
             </div>
           </main>
-          
+
+          <StatsWidget />
+
           <footer className="h-12 bg-black border-t border-[#141414] px-8 flex items-center justify-between text-[10px] font-mono text-gray-600 uppercase tracking-widest hidden sm:flex shrink-0">
             <div>Protocol Version: 1.0.42-STABLE</div>
             <div>&copy; 2026 x402 Development Group // Base Ecosystem</div>

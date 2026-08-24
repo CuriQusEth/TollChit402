@@ -15,6 +15,7 @@ import {
   declareDiscoveryExtension,
 } from "@x402/extensions";
 import { TIERS, type Tier } from "../shared/tiers.js";
+import { readStats, recordPayment } from "./_stats.js";
 import {
   createCdpFacilitatorClient,
   MissingConfigError,
@@ -37,6 +38,9 @@ const METERED_MAX_UNITS = 100; // 100 * 0.005 = 0.50 USDC
 
 /** A2A agent discovery document. */
 export const AGENT_CARD_ROUTE = "/.well-known/agent-card.json";
+
+/** Read-only payment counters. */
+export const STATS_ROUTE = "/api/stats";
 
 /** Base mainnet, CAIP-2. The CDP facilitator settles `exact` payments here. */
 export const BASE_NETWORK: Network = "eip155:8453";
@@ -180,6 +184,11 @@ function routes() {
       },
     ])
   );
+}
+
+/** "$0.25" gibi bir fiyatı 6 haneli USDC atomik birimine çevirir. */
+function priceToAtomic(price: string): number {
+  return Math.round(Number(price.replace(/[^0-9.]/g, "")) * 1_000_000);
 }
 
 /** Keşif metadata'sına konan sabit örnek yanıt. */
@@ -351,6 +360,9 @@ export function createPremiumRouter(): Router {
   for (const tier of TIERS) {
     router.get(tier.route, (req, res) => {
       if (tier.scheme !== "upto") {
+        // Bu noktaya yalnızca ödeme middleware'i doğrulamayı geçirdiyse
+        // gelinir, yani sayılan şey gerçekten ödenmiş bir istektir.
+        void recordPayment(priceToAtomic(tier.price));
         res.json(premiumPayload(tier));
         return;
       }
@@ -369,6 +381,9 @@ export function createPremiumRouter(): Router {
       // değil.
       setSettlementOverrides(res, { amount: String(chargedAtomic) });
 
+      // Tavan değil, gerçekte tahsil edilen tutar sayılır.
+      void recordPayment(chargedAtomic);
+
       res.json({
         ...premiumPayload(tier),
         usage: {
@@ -380,6 +395,10 @@ export function createPremiumRouter(): Router {
       });
     });
   }
+
+  router.get(STATS_ROUTE, async (_req, res) => {
+    res.json(await readStats());
+  });
 
   router.get(AGENT_CARD_ROUTE, (req, res) => {
     // x-forwarded-proto is what tells us the scheme behind Vercel's TLS
