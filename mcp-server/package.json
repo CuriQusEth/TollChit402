@@ -1,0 +1,26 @@
+{
+  "name": "x402-pay-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "x402-pay endpoint'ini MCP aracı olarak sunar; ödemeyi kendi cüzdanıyla otomatik yapar.",
+  "bin": { "x402-pay-mcp": "dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/evm": "^2.23.0",
+    "@x402/extensions": "^2.23.0",
+    "@x402/fetch": "^2.23.0",
+    "dotenv": "^17.2.3",
+    "viem": "^2.55.10",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "^5.6.3"
+  }
+}
