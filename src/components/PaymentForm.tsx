@@ -144,6 +144,21 @@ export default function PaymentForm() {
       return;
     }
 
+    // Facilitator kendine transferi reddediyor (self_send_not_allowed). Bunu
+    // imza istemeden önce yakalamak, kullanıcıyı boş yere cüzdan açtırmaktan
+    // kurtarır.
+    if (
+      recipient &&
+      address &&
+      recipient.toLowerCase() === address.toLowerCase()
+    ) {
+      setError(
+        "Alıcı adresi ödeme yapan cüzdanla aynı. Kendinize ödeme yapamazsınız — " +
+        "farklı bir adres girin ya da alanı boş bırakıp sunucu ayarını kullanın."
+      );
+      return;
+    }
+
     const tier = TIERS.find((t) => t.id === tierId) ?? TIERS[0];
 
     setIsPaying(true);
@@ -196,10 +211,15 @@ export default function PaymentForm() {
 
           if (verified === false) {
             if (signature.length !== 132) {
+              // Akıllı kontrat cüzdanları toptan reddedilmez: facilitator,
+              // DAĞITILMIŞ bir hesabın ERC-1271 imzasını doğrulayabilir.
+              // Sorun yalnızca hesap henüz zincire yazılmamışsa (ERC-6492)
+              // ve facilitator o factory'yi allowlist'ine almamışsa çıkar.
               throw new Error(
-                "Bu cüzdan akıllı kontrat hesabı imzası (ERC-1271/6492) üretti. " +
-                "x402 EIP-3009 ödemesi, imzadan çözümlenebilen standart bir EOA hesabı gerektirir. " +
-                "Lütfen normal bir cüzdan hesabıyla bağlanın."
+                "Bu cüzdan akıllı kontrat hesabı imzası (ERC-1271/6492) üretti ve imza " +
+                "yerel olarak doğrulanamadı. Hesabınız henüz zincire dağıtılmadıysa " +
+                "önce herhangi bir işlemle dağıtın; dağıtılmış akıllı cüzdanlar bu " +
+                "ödemeyi yapabilir. Alternatif olarak standart bir EOA hesabıyla bağlanın."
               );
             }
             throw new Error(
@@ -263,10 +283,26 @@ export default function PaymentForm() {
         
         if (errorBody.includes("invalid_exact_evm_signature")) {
           throw new Error(
-            "Ödeme imzası facilitator tarafından reddedildi. Bu genellikle imzanın " +
-            "ödeme yapan adrese çözümlenmemesinden kaynaklanır: akıllı kontrat " +
-            "cüzdanları (ERC-1271/6492) yerine standart bir EOA hesabı kullanın ve " +
-            "cüzdanınızda Base ağının seçili olduğundan emin olun."
+            "Ödeme imzası facilitator tarafından reddedildi. İmza, ödeme yapan " +
+            "adrese çözümlenmiyor. Sık görülen sebepler: cüzdanda bağlı olandan " +
+            "başka bir hesabın imzalaması, seçili ağın Base olmaması, ya da akıllı " +
+            "cüzdan hesabının henüz zincire dağıtılmamış olması."
+          );
+        }
+
+        if (errorBody.includes("self_send_not_allowed")) {
+          throw new Error(
+            "Facilitator kendine yapılan ödemeyi reddetti: alıcı adres, ödeme yapan " +
+            "cüzdanla aynı. Farklı bir alıcı adresi girin."
+          );
+        }
+
+        if (errorBody.includes("eip6492_factory_not_allowed")) {
+          throw new Error(
+            "Cüzdanınız henüz zincire dağıtılmamış bir akıllı hesap (ERC-6492) ve " +
+            "facilitator bu hesabın factory'sini kabul etmiyor. Hesabı herhangi bir " +
+            "işlemle dağıttıktan sonra tekrar deneyin — dağıtılmış akıllı cüzdanlar " +
+            "ERC-1271 ile doğrulanır."
           );
         }
 

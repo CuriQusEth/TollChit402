@@ -94,11 +94,49 @@ bağlıysa sayaçlar kalıcıdır; değilse bellekte tutulur ve her yeniden baş
 sıfırlanır — yanıttaki `persistent` alanı hangisinin geçerli olduğunu söyler.
 Yalnızca doğrulanmış ödemeler sayılır; 402 dönen istekler sayılmaz.
 
-## MCP sunucusu
+## AI ajanlarıyla ödeme
 
-`mcp-server/` altındaki bağımsız paket bu endpoint'i bir MCP aracı olarak sunar;
-Claude gibi ajanlar ödemeyi kendi cüzdanlarından otomatik yapar. Kurulum için
+Endpoint standart bir x402 ucu olduğu için, x402 ödeyebilen her ajan istemcisi
+onu çağırabilir. İki yol var:
+
+### Base MCP (önerilen — anahtar paylaşmadan)
+
+[Base MCP](https://docs.base.org/agents/quickstart) barındırılan bir MCP
+sunucusudur (`https://mcp.base.org`); asistanınızı kendi Base Account'unuza
+bağlar ve x402 uçlarını ödeyebilir. Kurulacak bir şey yok, bu projeye de bir
+bağımlılık eklemez.
+
+```bash
+# Claude Code
+claude mcp add --transport http base-mcp https://mcp.base.org
+```
+
+Claude, ChatGPT, Cursor ve Perplexity için bağlantı adımları Base'in
+quickstart'ındadır. Bağladıktan sonra asistana şunu söylemeniz yeterli:
+
+```
+https://<alan-adiniz>/api/premium adresine x402 ile öde ve dönen veriyi göster
+```
+
+Her ödeme Base Account'ta onayınıza sunulur — özel anahtar hiçbir yere
+kopyalanmaz.
+
+**Akıllı cüzdan notu:** Base Account bir akıllı hesaptır. Facilitator,
+**zincire dağıtılmış** akıllı hesapların ERC-1271 imzalarını doğrular; bu
+durumda ödeme sorunsuz geçer. Hesap henüz **dağıtılmamışsa** (ERC-6492,
+counterfactual) ödeme ancak facilitator o hesabın factory'sini allowlist'ine
+almışsa kabul edilir; aksi halde `eip6492_factory_not_allowed` döner. Bu
+durumda hesabı herhangi bir işlemle bir kez dağıtmak yeterlidir. Hem arayüz hem
+MCP aracı bu iki durumu ayırt eden mesajlar üretir.
+
+### Bu projenin kendi MCP sunucusu
+
+`mcp-server/` altındaki bağımsız paket, gözetimsiz senaryolar içindir: ödemeyi
+kendi sıcak cüzdanından **onay sormadan** yapar. Otomasyon için uygundur, ama
+anahtar riski size aittir — küçük bakiye tutun. Kurulum için
 `mcp-server/README.md`.
+
+Kısaca: insan varsa Base MCP, tam otomasyon gerekiyorsa yerel MCP sunucusu.
 
 ## Bazaar keşfi
 

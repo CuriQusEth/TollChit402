@@ -103,6 +103,15 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
     );
   }
 
+  // Facilitator kendine transferi reddediyor (self_send_not_allowed); imzadan
+  // önce yakalamak boşa bir ödeme turundan kurtarır.
+  if (payTo && payTo.toLowerCase() === account.address.toLowerCase()) {
+    throw new Error(
+      `Alıcı adresi ödeme yapan cüzdanla aynı (${account.address}). ` +
+        "Kendinize ödeme yapamazsınız; farklı bir alıcı adresi verin."
+    );
+  }
+
   // Paket yolu, yapılandırılan temel URL'in üzerine eklenir.
   const target = new URL(resourceServerUrl + TIER_PATHS[tier]);
   if (tier === "metered" && units !== undefined) {
@@ -122,10 +131,40 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
       // Gövde okunamadıysa aşağıdaki genel mesaja düşülür.
     }
 
+    // Reddedilen bir ödemede gövde boş {} olur; asıl sebep 402'nin
+    // PAYMENT-REQUIRED başlığındaki `error` alanındadır.
+    const header =
+      response.headers.get("payment-required") ??
+      response.headers.get("x-payment-required");
+    if (header) {
+      try {
+        const decoded = JSON.parse(
+          Buffer.from(header, "base64").toString()
+        ) as { error?: unknown };
+        if (typeof decoded.error === "string") {
+          errorBody = `${errorBody} ${decoded.error}`;
+        }
+      } catch {
+        // Başlık çözülemezse gövdeyle devam edilir.
+      }
+    }
+
     if (errorBody.includes("invalid_exact_evm_signature")) {
       throw new Error(
         "Ödeme imzası facilitator tarafından reddedildi. EVM_PRIVATE_KEY'in " +
           "geçerli bir EOA hesabına ait olduğundan emin olun."
+      );
+    }
+    if (errorBody.includes("self_send_not_allowed")) {
+      throw new Error(
+        "Facilitator kendine yapılan ödemeyi reddetti: alıcı adres ödeme yapan " +
+          "cüzdanla aynı. Farklı bir alıcı adresi verin."
+      );
+    }
+    if (errorBody.includes("eip6492_factory_not_allowed")) {
+      throw new Error(
+        "Ödeyen hesap henüz zincire dağıtılmamış bir akıllı hesap (ERC-6492) ve " +
+          "facilitator bu factory'yi kabul etmiyor. Hesabı dağıtın ya da EOA kullanın."
       );
     }
     if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
