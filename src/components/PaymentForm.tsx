@@ -71,6 +71,26 @@ function describePaymentError(err: unknown): string {
   return raw || 'Bilinmeyen bir hata oluştu.';
 }
 
+/**
+ * 402 yanıtındaki PAYMENT-REQUIRED başlığından reddetme sebebini çıkarır.
+ *
+ * Ödeme denendikten sonra gelen 402'nin gövdesi boştur; facilitator'ın verdiği
+ * gerçek sebep bu başlıktaki `error` alanındadır.
+ */
+function decodePaymentRequiredError(response: Response): string | null {
+  const header =
+    response.headers.get('payment-required') ??
+    response.headers.get('x-payment-required');
+  if (!header) return null;
+
+  try {
+    const decoded = JSON.parse(atob(header)) as { error?: unknown };
+    return typeof decoded.error === 'string' ? decoded.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PaymentForm() {
   const { address, isConnected } = useAccount();
   const { connectors, connect, isPending: isConnecting } = useConnect();
@@ -85,6 +105,8 @@ export default function PaymentForm() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<PaymentStep>('idle');
+  // Hata anında hangi aşamada kalındığını göstermek için; 'error' bunu kaybeder.
+  const [failedAt, setFailedAt] = useState<PaymentStep>('signing');
   const [history, setHistory] = useState<PaymentRecord[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -128,6 +150,7 @@ export default function PaymentForm() {
     setError(null);
     setTxHash(null);
     setStep('signing');
+    setFailedAt('signing');
 
     try {
       // 1. Prepare wagmi compatible signer for x402
@@ -231,6 +254,12 @@ export default function PaymentForm() {
         try {
           errorBody = await response.text();
         } catch (e) {}
+
+        // Ödeme reddedildiğinde gövde boş bir {} olur; asıl sebep 402'nin
+        // PAYMENT-REQUIRED başlığındaki `error` alanında gelir. Yalnızca
+        // gövdeye bakmak kullanıcıya "Sunucu Hatası: 402 - {}" gösteriyordu.
+        const reason = decodePaymentRequiredError(response);
+        if (reason) errorBody = `${errorBody} ${reason}`;
         
         if (errorBody.includes("invalid_exact_evm_signature")) {
           throw new Error(
@@ -290,6 +319,7 @@ export default function PaymentForm() {
     } catch (err) {
       console.error("Tam hata:", err);
       const message = describePaymentError(err);
+      setFailedAt(step === 'error' ? failedAt : step);
       setStep('error');
       setError(message);
       pushToast('error', message);
@@ -374,15 +404,23 @@ export default function PaymentForm() {
             </div>
             {step !== 'idle' && (
               <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono uppercase tracking-widest">
-                {STEP_ORDER.map((s) => {
-                  const reached = STEP_ORDER.indexOf(step) >= STEP_ORDER.indexOf(s);
-                  const current = step === s;
+                {STEP_ORDER.map((s, i) => {
+                  // Hata durumunda yalnızca ulaşılan aşamalar gösterilir:
+                  // "Tamamlandı" ile "Başarısız"ı yan yana göstermek çelişkiliydi.
+                  const failedIndex = STEP_ORDER.indexOf(failedAt);
+                  if (step === 'error' && i > failedIndex) return null;
+
+                  const currentIndex = STEP_ORDER.indexOf(step);
+                  const isFailed = step === 'error' && i === failedIndex;
+                  const reached = step === 'error' ? i <= failedIndex : currentIndex >= i;
+                  const isActive = step === s && step !== 'done';
+
                   return (
                     <span
                       key={s}
                       className={`flex items-center gap-1.5 ${
-                        step === 'error'
-                          ? 'text-gray-600'
+                        isFailed
+                          ? 'text-red-400'
                           : reached
                             ? 'text-emerald-400'
                             : 'text-gray-600'
@@ -390,23 +428,21 @@ export default function PaymentForm() {
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          current && step !== 'done'
-                            ? 'bg-emerald-400 animate-pulse'
-                            : reached && step !== 'error'
-                              ? 'bg-emerald-500'
-                              : 'bg-[#333]'
+                          isFailed
+                            ? 'bg-red-500'
+                            : isActive
+                              ? 'bg-emerald-400 animate-pulse'
+                              : reached
+                                ? 'bg-emerald-500'
+                                : 'bg-[#333]'
                         }`}
                       />
-                      {STEP_LABELS[s as Exclude<PaymentStep, 'idle'>]}
+                      {isFailed
+                        ? STEP_LABELS.error
+                        : STEP_LABELS[s as Exclude<PaymentStep, 'idle'>]}
                     </span>
                   );
                 })}
-                {step === 'error' && (
-                  <span className="flex items-center gap-1.5 text-red-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                    {STEP_LABELS.error}
-                  </span>
-                )}
               </div>
             )}
 
