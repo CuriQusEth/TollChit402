@@ -4,8 +4,10 @@ import { Loader2, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from '@x402/fetch';
 import type { ClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
+import { UptoEvmScheme } from '@x402/evm/upto/client';
 import { ExactEvmSchemeV1 } from '@x402/evm/v1';
 import ToastStack, { type ToastMessage, type ToastKind } from './Toast';
+import { TIERS, type TierId } from '../../shared/tiers';
 import {
   appendRecord,
   clearHistory,
@@ -77,6 +79,7 @@ export default function PaymentForm() {
   const publicClient = usePublicClient();
   const { switchChainAsync } = useSwitchChain();
 
+  const [tierId, setTierId] = useState<TierId>(TIERS[0].id);
   const [recipient, setRecipient] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -118,6 +121,8 @@ export default function PaymentForm() {
       setError("Alıcı adresi geçersiz: 0x ile başlayan 40 haneli bir adres girin.");
       return;
     }
+
+    const tier = TIERS.find((t) => t.id === tierId) ?? TIERS[0];
 
     setIsPaying(true);
     setError(null);
@@ -199,13 +204,16 @@ export default function PaymentForm() {
       // "No client registered for x402 version: N" when that version is missing,
       // so both are registered.
       client.register("eip155:*", new ExactEvmScheme(clientSigner));
+      // The metered tier is priced with the upto scheme, so its client
+      // implementation must be registered or that 402 cannot be answered.
+      client.register("eip155:*", new UptoEvmScheme(clientSigner));
       client.registerV1("base", new ExactEvmSchemeV1(clientSigner));
 
       // 4. Create an x402-wrapped fetch function
       const fetchWithPayment = wrapFetchWithPayment(window.fetch.bind(window), client);
 
       // 5. Pay this app's own x402-protected endpoint, settled by the CDP facilitator
-      const apiUrl = '/api/premium';
+      const apiUrl = tier.route;
       // İmza, wrapFetchWithPayment içindeki 402 turunda isteniyor; istek
       // dönene kadar cüzdan aşamasındayız.
       const response = await fetchWithPayment(apiUrl, {
@@ -269,7 +277,7 @@ export default function PaymentForm() {
         setHistory(
           appendRecord({
             txHash: finalTxHash,
-            amount: PRICE_LABEL,
+            amount: tier.price,
             recipient: recipient || 'sunucu ayarı',
             timestamp: new Date().toISOString(),
             network: NETWORK,
@@ -277,7 +285,7 @@ export default function PaymentForm() {
         );
       }
 
-      pushToast('success', `Ödeme tamamlandı (${PRICE_LABEL}).`);
+      pushToast('success', `Ödeme tamamlandı — ${tier.label} (${tier.price}).`);
 
     } catch (err) {
       console.error("Tam hata:", err);
@@ -319,6 +327,35 @@ export default function PaymentForm() {
         </div>
         
         <div className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">
+              Paket
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {TIERS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTierId(t.id)}
+                  disabled={isPaying}
+                  className={`px-2 py-2 border text-[10px] font-mono uppercase tracking-widest transition-colors disabled:opacity-50 ${
+                    tierId === t.id
+                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                      : 'bg-transparent border-[#333] text-gray-400 hover:border-gray-500'
+                  }`}
+                >
+                  <span className="block font-bold">{t.label}</span>
+                  <span className="block text-[9px] opacity-70">
+                    {t.scheme === 'upto' ? `≤ ${t.price}` : t.price}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[9px] font-mono text-gray-600 leading-relaxed">
+              {TIERS.find((t) => t.id === tierId)?.description}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Ödeme bu adrese gider)</label>
             <input

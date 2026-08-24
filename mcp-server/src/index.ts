@@ -19,11 +19,27 @@ import {
   decodePaymentResponseHeader,
 } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { UptoEvmScheme } from "@x402/evm/upto/client";
 import type { ClientEvmSigner } from "@x402/evm";
 
 config();
 
 const DEFAULT_RESOURCE_URL = "https://x402-pay-iota.vercel.app/api/premium";
+
+/**
+ * Paket -> yol soneki.
+ *
+ * Kaynak tablo kök projedeki shared/tiers.ts; burada küçük bir kopyası tutuluyor
+ * çünkü bu paket bilinçli olarak bağımsızdır ve prodüksiyonda sunucuyla aynı
+ * dosya sistemini paylaşmaz. Yeni paket eklenirse iki taraf da güncellenmeli.
+ */
+const TIER_PATHS = {
+  basic: "",
+  pro: "/pro",
+  metered: "/metered",
+} as const;
+
+type TierId = keyof typeof TIER_PATHS;
 
 const privateKey = process.env.EVM_PRIVATE_KEY?.trim();
 if (!privateKey) {
@@ -72,12 +88,14 @@ const signer: ClientEvmSigner = {
 
 const client = new x402Client();
 client.register("eip155:*", new ExactEvmScheme(signer));
+// metered paketi upto ile fiyatlanır; istemci şeması olmadan o 402 karşılanamaz.
+client.register("eip155:*", new UptoEvmScheme(signer));
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
 /**
  * Ücretli endpoint'i çağırır, ödemeyi yapar ve yanıtı makbuzla döndürür.
  */
-async function callPremium(recipient?: string) {
+async function callPremium(recipient?: string, tier: TierId = "basic", units?: number) {
   const payTo = recipient?.trim() || defaultRecipient;
   if (payTo && !/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
     throw new Error(
@@ -85,7 +103,13 @@ async function callPremium(recipient?: string) {
     );
   }
 
-  const response = await fetchWithPayment(resourceServerUrl, {
+  // Paket yolu, yapılandırılan temel URL'in üzerine eklenir.
+  const target = new URL(resourceServerUrl + TIER_PATHS[tier]);
+  if (tier === "metered" && units !== undefined) {
+    target.searchParams.set("units", String(units));
+  }
+
+  const response = await fetchWithPayment(target.toString(), {
     method: "GET",
     headers: payTo ? { "x-payment-recipient": payTo } : undefined,
   });
@@ -143,7 +167,7 @@ const server = new McpServer({ name: "x402-pay", version: "1.0.0" });
 server.tool(
   "get_premium_data",
   "x402 ile korunan premium endpoint'ten veri getirir. Her çağrı Base " +
-    "mainnet üzerinde 0.05 USDC tutarında bir ödeme yapar; ödeme yapılandırılmış " +
+    "mainnet üzerinde seçilen pakete göre bir USDC ödemesi yapar; ödeme yapılandırılmış " +
     "cüzdandan otomatik olarak çekilir ve insan onayı istenmez. Endpoint'in JSON " +
     "yanıtını ve settlement işleminin hash'ini döndürür.",
   {
@@ -154,9 +178,26 @@ server.tool(
         "İsteğe bağlı. Ödemenin gideceği Base adresi; PAYMENT_RECIPIENT " +
           "ayarını bu çağrı için geçersiz kılar."
       ),
+    tier: z
+      .enum(["basic", "pro", "metered"])
+      .optional()
+      .describe(
+        "İsteğe bağlı paket. basic $0.05, pro $0.25 sabit ücretlidir; " +
+          "metered en fazla $0.50 yetkilendirir ve yalnızca kullanılan " +
+          "birimleri tahsil eder. Varsayılan: basic."
+      ),
+    units: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "Yalnızca metered paketinde geçerli. Tahsil edilecek birim sayısı " +
+          "(birim başına 0.005 USDC); tavana kadar kırpılır."
+      ),
   },
-  async ({ recipient }) => {
-    const result = await callPremium(recipient);
+  async ({ recipient, tier, units }) => {
+    const result = await callPremium(recipient, tier ?? "basic", units);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result, null, 2) },

@@ -1,6 +1,11 @@
 import express, { type Router } from "express";
-import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import {
+  paymentMiddleware,
+  setSettlementOverrides,
+  x402ResourceServer,
+} from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { UptoEvmScheme } from "@x402/evm/upto/server";
 import type { Network } from "@x402/core/types";
 import type { HTTPRequestContext } from "@x402/core/server";
 import {
@@ -9,14 +14,26 @@ import {
   declareBuilderCodeExtension,
   declareDiscoveryExtension,
 } from "@x402/extensions";
+import { TIERS, type Tier } from "../shared/tiers.js";
 import {
   createCdpFacilitatorClient,
   MissingConfigError,
   missingEnvHint,
 } from "./_cdp-facilitator.js";
 
-/** Path of the x402-protected endpoint. */
-export const PREMIUM_ROUTE = "/api/premium";
+
+
+/** Varsayılan paket; tarayıcı arayüzü ve MCP aracı bunu kullanır. */
+export const PREMIUM_ROUTE = TIERS[0].route;
+
+/** Ücretli uçların tamamı; router hangi yolun kapılı olduğunu buradan bilir. */
+const PAID_ROUTES: readonly string[] = TIERS.map((t) => t.route);
+
+/** `metered` ucunda birim başına ücret (6 haneli USDC atomik birimi). */
+const METERED_UNIT_ATOMIC = 5000; // 0.005 USDC
+
+/** Tavanı aşmamak için izin verilen en yüksek birim sayısı. */
+const METERED_MAX_UNITS = 100; // 100 * 0.005 = 0.50 USDC
 
 /** A2A agent discovery document. */
 export const AGENT_CARD_ROUTE = "/.well-known/agent-card.json";
@@ -123,58 +140,67 @@ function getBuilderCode(): string | undefined {
 /** Route configuration for the paid endpoint. */
 function routes() {
   const builderCode = getBuilderCode();
-  return {
-    // The verb prefix matters: a bare path is stored with verb "*", which gates
-    // every method. Only GET is served, so without it a client could pay for a
-    // POST and then get a 404.
-    [`GET ${PREMIUM_ROUTE}`]: {
-      accepts: [
-        {
-          scheme: "exact",
-          network: BASE_NETWORK,
-          payTo: resolvePaymentRecipient,
-          price: PRICE,
-        },
-      ],
-      description:
-        "Base mainnet üzerinde x402 ile ödenen demo endpoint; ödeme doğrulandıktan sonra JSON döner.",
-      mimeType: "application/json",
-      serviceName: "x402-pay",
-      tags: ["x402", "base", "usdc", "demo"],
-      // Bazaar discovery metadata. Without this the endpoint still takes
-      // payments, but the facilitator will not index it and CDP's
-      // /v2/x402/validate reports has_bazaar_extension as failed.
-      // The HTTP method is deliberately omitted: bazaarResourceServerExtension
-      // fills it in from the route when it enriches the declaration.
-      extensions: {
-        ...(builderCode
-          ? { [BUILDER_CODE]: declareBuilderCodeExtension(builderCode) }
-          : {}),
-        ...declareDiscoveryExtension({
-        // A fixed sample, not premiumPayload(): the declaration is built once,
-        // so a live timestamp would freeze into the published discovery
-        // metadata and advertise a stale paidAt forever.
-        output: {
-          example: {
-            service: "x402-pay",
+  const builderExtension = builderCode
+    ? { [BUILDER_CODE]: declareBuilderCodeExtension(builderCode) }
+    : {};
+
+  return Object.fromEntries(
+    TIERS.map((tier) => [
+      // The verb prefix matters: a bare path is stored with verb "*", which
+      // gates every method. Only GET is served, so without it a client could
+      // pay for a POST and then get a 404.
+      `GET ${tier.route}`,
+      {
+        accepts: [
+          {
+            scheme: tier.scheme,
             network: BASE_NETWORK,
-            price: PRICE,
-            paidAt: "2026-01-01T00:00:00.000Z",
-            message: "Ödeme doğrulandı ve Base üzerinde settle edildi.",
+            payTo: resolvePaymentRecipient,
+            price: tier.price,
           },
+        ],
+        description: tier.description,
+        mimeType: "application/json",
+        serviceName: "x402-pay",
+        tags: ["x402", "base", "usdc", tier.id],
+        // Bazaar discovery metadata. Without this the endpoint still takes
+        // payments, but the facilitator will not index it and CDP's
+        // /v2/x402/validate reports has_bazaar_extension as failed.
+        // The HTTP method is deliberately omitted: bazaarResourceServerExtension
+        // fills it in from the route when it enriches the declaration.
+        extensions: {
+          ...builderExtension,
+          ...declareDiscoveryExtension({
+            // A fixed sample, not the live payload: the declaration is built
+            // once, so a live timestamp would freeze into the published
+            // discovery metadata and advertise a stale paidAt forever.
+            output: { example: sampleFor(tier) },
+          }),
         },
-        }),
       },
-    },
+    ])
+  );
+}
+
+/** Keşif metadata'sına konan sabit örnek yanıt. */
+function sampleFor(tier: Tier) {
+  return {
+    service: "x402-pay",
+    tier: tier.id,
+    network: BASE_NETWORK,
+    price: tier.price,
+    paidAt: "2026-01-01T00:00:00.000Z",
+    message: "Ödeme doğrulandı ve Base üzerinde settle edildi.",
   };
 }
 
 /** The content served once a payment has been verified and settled. */
-function premiumPayload() {
+function premiumPayload(tier: Tier) {
   return {
     service: "x402-pay",
+    tier: tier.id,
     network: BASE_NETWORK,
-    price: PRICE,
+    price: tier.price,
     paidAt: new Date().toISOString(),
     message:
       "Ödeme doğrulandı ve Base üzerinde settle edildi. Bu içerik yalnızca ödeme sonrası döner.",
@@ -209,15 +235,19 @@ function agentCard(origin: string) {
         protocolVersion: "2",
       },
     ],
-    skills: [
-      {
-        id: "premium-demo",
-        name: "x402 Demo Endpoint",
-        description: `Ödeme doğrulandıktan sonra JSON döner. x402 ile ödeme gerektirir (${PRICE}, Base Mainnet, EIP-3009 'exact' şeması).`,
-        tags: ["x402", "base", "usdc", "payment-required"],
-        examples: [`GET ${PREMIUM_ROUTE}`],
-      },
-    ],
+    // Her paket ayrı bir beceri olarak duyurulur; ajan hangi ucun ne kadara
+    // mal olduğunu kartı okuyarak görebilsin.
+    skills: TIERS.map((tier) => ({
+      id: tier.id,
+      name: `x402 ${tier.label}`,
+      description: tier.description,
+      tags: ["x402", "base", "usdc", "payment-required", tier.id],
+      examples: [
+        tier.scheme === "upto"
+          ? `GET ${tier.route}?units=10`
+          : `GET ${tier.route}`,
+      ],
+    })),
     security: [
       {
         x402: {
@@ -263,6 +293,10 @@ export function createPremiumRouter(): Router {
       pending = (async () => {
         const server = new x402ResourceServer(createCdpFacilitatorClient())
           .register(BASE_NETWORK, new ExactEvmScheme())
+          // The metered tier settles through the upto scheme, so its server
+          // implementation has to be registered too; without it the route's
+          // payment option is dropped and the 402 advertises an empty accepts.
+          .register(BASE_NETWORK, new UptoEvmScheme())
           // Enriches the route's bazaar declaration and lets the facilitator
           // index this resource after a settlement.
           // bazaarResourceServerExtension is not registered here: the express
@@ -286,7 +320,7 @@ export function createPremiumRouter(): Router {
   router.use(async (req, res, next) => {
     // Only the paid route is gated. The SPA and its assets must keep working
     // even when CDP credentials are absent or the facilitator is unreachable.
-    if (req.path !== PREMIUM_ROUTE) return next();
+    if (!PAID_ROUTES.includes(req.path)) return next();
 
     const recipient = pickPaymentRecipient(req.header(RECIPIENT_HEADER));
     if ("error" in recipient) {
@@ -314,9 +348,38 @@ export function createPremiumRouter(): Router {
     return Promise.resolve(paid(req, res, next)).catch(next);
   });
 
-  router.get(PREMIUM_ROUTE, (_req, res) => {
-    res.json(premiumPayload());
-  });
+  for (const tier of TIERS) {
+    router.get(tier.route, (req, res) => {
+      if (tier.scheme !== "upto") {
+        res.json(premiumPayload(tier));
+        return;
+      }
+
+      // upto: istemci tavanı yetkilendirdi, gerçek tutarı burada belirliyoruz.
+      // Talep edilen birim sayısı tavanı aşamaz, yoksa facilitator settlement'ı
+      // reddeder — bu yüzden kırpılıyor.
+      const requested = Number.parseInt(String(req.query.units ?? "1"), 10);
+      const units = Number.isFinite(requested)
+        ? Math.min(Math.max(requested, 1), METERED_MAX_UNITS)
+        : 1;
+      const chargedAtomic = units * METERED_UNIT_ATOMIC;
+
+      // Bu, settlement anındaki PaymentRequirements.amount alanını geçersiz
+      // kılar: zincire yazılan gerçek tahsilat budur, yetkilendirilen tavan
+      // değil.
+      setSettlementOverrides(res, { amount: String(chargedAtomic) });
+
+      res.json({
+        ...premiumPayload(tier),
+        usage: {
+          units,
+          unitPriceAtomic: String(METERED_UNIT_ATOMIC),
+          authorizedMaxAtomic: String(METERED_MAX_UNITS * METERED_UNIT_ATOMIC),
+          chargedAtomic: String(chargedAtomic),
+        },
+      });
+    });
+  }
 
   router.get(AGENT_CARD_ROUTE, (req, res) => {
     // x-forwarded-proto is what tells us the scheme behind Vercel's TLS
