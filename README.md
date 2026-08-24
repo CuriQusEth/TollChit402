@@ -31,7 +31,7 @@ hem **alıcı** hem **satıcı** tarafını içerir:
    | --- | --- |
    | `CDP_API_KEY_ID` | CDP API anahtar kimliği ([CDP Portal](https://portal.cdp.coinbase.com)) |
    | `CDP_API_KEY_SECRET` | CDP API anahtar gizi |
-   | `PAYMENT_RECIPIENT_ADDRESS` | Ödemelerin (USDC) gideceği Base adresi |
+   | `PAYMENT_RECIPIENT_ADDRESS` | İsteğe bağlı. Paneldeki alan boş bırakılırsa kullanılacak Base adresi |
    | `CDP_FACILITATOR_BASE_URL` | İsteğe bağlı. Farklı bir facilitator (staging/canary) hedeflemek için |
    | `BUILDER_CODE` | İsteğe bağlı. ERC-8021 Base Builder Code; tanımsızsa projenin kendi kodu kullanılır |
 
@@ -59,6 +59,17 @@ npm start
 
 Vercel'de `/api/premium` serverless fonksiyon olarak çalışır ve geliştirme
 sunucusuyla aynı router'ı kullanır.
+
+## Ödeme alıcısı
+
+Arayüzdeki **Recipient Address** alanına yazılan adres, `x-payment-recipient`
+başlığıyla sunucuya gider ve o isteğin `payTo` değeri olur. Alan boşsa
+`PAYMENT_RECIPIENT_ADDRESS` kullanılır; ikisi de yoksa endpoint 400 döner.
+
+Bunun anlamına dikkat: alıcıyı **ödeyen** seçer. Bu, ödeme akışının bir
+demosudur — gelir toplama yolu değil, çünkü ziyaretçi kendi cüzdanını
+yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
+`PAYMENT_RECIPIENT_ADDRESS` tanımlayın ve arayüzdeki alanı kaldırın.
 
 ## Bazaar keşfi
 

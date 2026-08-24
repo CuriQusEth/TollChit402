@@ -2,6 +2,7 @@ import express, { type Router } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import type { Network } from "@x402/core/types";
+import type { HTTPRequestContext } from "@x402/core/server";
 import {
   BUILDER_CODE,
   builderCodeResourceServerExtension,
@@ -26,19 +27,61 @@ export const BASE_NETWORK: Network = "eip155:8453";
 /** Price per request, in the x402 `Money` form. */
 export const PRICE = "$0.05";
 
+/** Header the UI uses to name the wallet a payment should go to. */
+export const RECIPIENT_HEADER = "x-payment-recipient";
+
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
 /**
- * Wallet that receives the USDC. Kept in the environment so no address is
- * baked into the repository.
+ * Wallet that receives the USDC for one request.
+ *
+ * The address is read from the request, so the panel in the UI decides where a
+ * payment goes and no address has to be configured to run the app. Note what
+ * this means: the payer chooses the recipient, so this is a demo of the payment
+ * flow rather than a way to collect revenue — a visitor can simply name their
+ * own wallet. Set PAYMENT_RECIPIENT_ADDRESS to pin every payment to one wallet
+ * instead; it is also the fallback when the panel is left empty.
  */
-function getPaymentRecipient(): string {
-  const payTo = process.env.PAYMENT_RECIPIENT_ADDRESS;
-  if (!payTo) {
-    throw new MissingConfigError(
-      "PAYMENT_RECIPIENT_ADDRESS tanımlı değil. Ödemelerin gideceği Base adresini tanımlayın. " +
-        missingEnvHint()
-    );
+export function pickPaymentRecipient(
+  requested: string | undefined
+): { address: string } | { error: string } {
+  const fromPanel = requested?.trim();
+
+  if (fromPanel) {
+    return EVM_ADDRESS.test(fromPanel)
+      ? { address: fromPanel }
+      : {
+          error: `Alıcı adresi geçersiz: "${fromPanel}". 0x ile başlayan 40 haneli bir EVM adresi olmalı.`,
+        };
   }
-  return payTo;
+
+  const configured = process.env.PAYMENT_RECIPIENT_ADDRESS?.trim();
+  if (!configured) {
+    return {
+      error:
+        "Alıcı adresi yok: paneldeki 'Recipient Address' alanını doldurun ya da " +
+        "PAYMENT_RECIPIENT_ADDRESS tanımlayın. " +
+        missingEnvHint(),
+    };
+  }
+  return EVM_ADDRESS.test(configured)
+    ? { address: configured }
+    : {
+        error: `PAYMENT_RECIPIENT_ADDRESS geçersiz: "${configured}". 0x ile başlayan 40 haneli bir EVM adresi olmalı.`,
+      };
+}
+
+/**
+ * The payTo the middleware asks for while building payment requirements.
+ *
+ * By this point the router has already validated the recipient and answered if
+ * it was unusable, so a throw here would mean a bug rather than bad input —
+ * @x402/express would swallow it into a bare "Internal Server Error".
+ */
+function resolvePaymentRecipient(context: HTTPRequestContext): string {
+  const picked = pickPaymentRecipient(context.adapter.getHeader(RECIPIENT_HEADER));
+  if ("error" in picked) throw new MissingConfigError(picked.error);
+  return picked.address;
 }
 
 /**
@@ -89,7 +132,7 @@ function routes() {
         {
           scheme: "exact",
           network: BASE_NETWORK,
-          payTo: getPaymentRecipient(),
+          payTo: resolvePaymentRecipient,
           price: PRICE,
         },
       ],
@@ -244,6 +287,12 @@ export function createPremiumRouter(): Router {
     // Only the paid route is gated. The SPA and its assets must keep working
     // even when CDP credentials are absent or the facilitator is unreachable.
     if (req.path !== PREMIUM_ROUTE) return next();
+
+    const recipient = pickPaymentRecipient(req.header(RECIPIENT_HEADER));
+    if ("error" in recipient) {
+      res.status(400).json({ error: "invalid_recipient", message: recipient.error });
+      return;
+    }
 
     let paid: ReturnType<typeof paymentMiddleware>;
     try {

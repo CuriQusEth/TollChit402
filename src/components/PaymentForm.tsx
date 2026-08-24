@@ -31,7 +31,7 @@ export default function PaymentForm() {
   const publicClient = usePublicClient();
   const { switchChainAsync } = useSwitchChain();
 
-  const [receiver, setReceiver] = useState("");
+  const [recipient, setRecipient] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +53,11 @@ export default function PaymentForm() {
       }
     }
     
+    if (recipient && !/^0x[0-9a-fA-F]{40}$/.test(recipient)) {
+      setError("Alıcı adresi geçersiz: 0x ile başlayan 40 haneli bir adres girin.");
+      return;
+    }
+
     setIsPaying(true);
     setError(null);
     setTxHash(null);
@@ -140,7 +145,11 @@ export default function PaymentForm() {
       // 5. Pay this app's own x402-protected endpoint, settled by the CDP facilitator
       const apiUrl = '/api/premium';
       const response = await fetchWithPayment(apiUrl, {
-        method: 'GET'
+        method: 'GET',
+        // The server reads this to decide payTo, so the panel controls where the
+        // payment lands. Omitted when blank, which falls back to the server's
+        // configured recipient.
+        headers: recipient ? { 'x-payment-recipient': recipient } : undefined,
       });
 
       if (!response.ok) {
@@ -220,12 +229,12 @@ export default function PaymentForm() {
         
         <div className="space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Optional)</label>
+            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Ödeme bu adrese gider)</label>
             <input
               type="text"
-              placeholder="0x..."
-              value={receiver}
-              onChange={(e) => setReceiver(e.target.value)}
+              placeholder="0x… (boşsa sunucu ayarı kullanılır)"
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value.trim())}
               className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
             />
           </div>
