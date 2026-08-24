@@ -121,13 +121,21 @@ https://<alan-adiniz>/api/premium adresine x402 ile öde ve dönen veriyi göste
 Her ödeme Base Account'ta onayınıza sunulur — özel anahtar hiçbir yere
 kopyalanmaz.
 
-**Akıllı cüzdan notu:** Base Account bir akıllı hesaptır. Facilitator,
-**zincire dağıtılmış** akıllı hesapların ERC-1271 imzalarını doğrular; bu
-durumda ödeme sorunsuz geçer. Hesap henüz **dağıtılmamışsa** (ERC-6492,
-counterfactual) ödeme ancak facilitator o hesabın factory'sini allowlist'ine
-almışsa kabul edilir; aksi halde `eip6492_factory_not_allowed` döner. Bu
-durumda hesabı herhangi bir işlemle bir kez dağıtmak yeterlidir. Hem arayüz hem
-MCP aracı bu iki durumu ayırt eden mesajlar üretir.
+**Akıllı cüzdan uyarısı:** Base Account bir akıllı hesaptır ve bu endpoint'i
+şu an **ödeyemez**. `exact` şeması EIP-3009 kullanır; facilitator, imzayı
+doğrulamak için digest'i doğrudan hesabın `isValidSignature` fonksiyonuna verir.
+Coinbase Smart Wallet gibi hesaplar imzayı kendi sarmalayıcı biçiminde ve
+replay-safe bir hash üzerinden beklediği için bu çağrı revert eder ve ödeme
+`invalid_exact_evm_payload_signature` ile reddedilir. Canlı bir ödemede
+gözlemlendi.
+
+Bu yüzden Base MCP'yi bu endpoint'e ödeme yaptırmak için değil, cüzdan
+işlemleri (bakiye, transfer, swap) için kullanın. Ödeme yapmak isteyen ajanlar
+için `mcp-server/` paketi standart bir EOA hesabıyla çalışır.
+
+Arayüzdeki Coinbase Wallet konnektörü bu nedenle `preference: 'eoaOnly'` ile
+yapılandırıldı — kullanıcı akıllı cüzdana yönlendirilip başarısız bir ödemeye
+sürüklenmesin.
 
 ### Bu projenin kendi MCP sunucusu
 

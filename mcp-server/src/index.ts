@@ -161,6 +161,16 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
           "cüzdanla aynı. Farklı bir alıcı adresi verin."
       );
     }
+    if (
+      errorBody.includes("invalid_exact_evm_payload_signature") ||
+      errorBody.includes("execution reverted")
+    ) {
+      throw new Error(
+        "Facilitator imzayı doğrulayamadı: ödeyen adreste kontrat kodu var ve " +
+          "isValidSignature çağrısı revert etti. EVM_PRIVATE_KEY standart bir EOA " +
+          "hesabına ait olmalı; akıllı kontrat cüzdanları desteklenmiyor."
+      );
+    }
     if (errorBody.includes("eip6492_factory_not_allowed")) {
       throw new Error(
         "Ödeyen hesap henüz zincire dağıtılmamış bir akıllı hesap (ERC-6492) ve " +

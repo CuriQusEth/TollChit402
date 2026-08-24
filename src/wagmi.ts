@@ -7,7 +7,12 @@ export const config = createConfig({
   multiInjectedProviderDiscovery: false,
   connectors: [
     injected(),
-    coinbaseWallet({ appName: 'x402-pay', preference: 'all' })
+    // 'all' yerine 'eoaOnly': Coinbase Smart Wallet (Base Account) bu ödemeyi
+    // yapamıyor. Facilitator, EIP-3009 digest'ini doğrudan hesabın
+    // isValidSignature'ına veriyor; akıllı cüzdan imzayı kendi sarmalayıcı
+    // biçiminde ve replay-safe hash üzerinden beklediği için çağrı revert
+    // ediyor ve ödeme invalid_exact_evm_payload_signature ile reddediliyor.
+    coinbaseWallet({ appName: 'x402-pay', preference: 'eoaOnly' })
   ],
   transports: {
     [base.id]: http(),

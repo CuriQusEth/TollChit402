@@ -297,6 +297,20 @@ export default function PaymentForm() {
           );
         }
 
+        if (
+          errorBody.includes("invalid_exact_evm_payload_signature") ||
+          errorBody.includes("execution reverted")
+        ) {
+          throw new Error(
+            "Ödeme akıllı kontrat cüzdanından yapılıyor ve facilitator imzayı " +
+            "doğrulayamadı. EIP-3009 digest'i doğrudan hesabın isValidSignature " +
+            "fonksiyonuna veriliyor; Coinbase Smart Wallet gibi hesaplar imzayı " +
+            "kendi sarmalayıcı biçiminde beklediği için bu çağrı revert ediyor. " +
+            "Lütfen standart bir EOA cüzdanıyla (MetaMask/Rabby'de normal hesap) " +
+            "bağlanın."
+          );
+        }
+
         if (errorBody.includes("eip6492_factory_not_allowed")) {
           throw new Error(
             "Cüzdanınız henüz zincire dağıtılmamış bir akıllı hesap (ERC-6492) ve " +
