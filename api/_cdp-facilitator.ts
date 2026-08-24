@@ -97,6 +97,17 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
   ].filter(Boolean);
 
   if (!apiKeyId || !apiKeySecret) {
+    // Names only, never values: a variable set under a slightly different name
+    // is otherwise indistinguishable from one that was never set at all, and
+    // the response cannot carry this without exposing the environment.
+    const visible = Object.keys(process.env)
+      .filter((k) => /^(CDP_|PAYMENT_|BUILDER_)/.test(k))
+      .sort();
+    console.error(
+      `[cdp] Eksik: ${missing.join(", ")}. Ortamda görünen ilgili değişken adları: ` +
+        (visible.length ? visible.join(", ") : "(hiçbiri)")
+    );
+
     throw new MissingConfigError(
       `CDP kimlik bilgileri eksik: ${missing.join(", ")}. ` + missingEnvHint()
     );
