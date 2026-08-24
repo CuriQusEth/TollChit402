@@ -186,11 +186,6 @@ function routes() {
   );
 }
 
-/** "$0.25" gibi bir fiyatı 6 haneli USDC atomik birimine çevirir. */
-function priceToAtomic(price: string): number {
-  return Math.round(Number(price.replace(/[^0-9.]/g, "")) * 1_000_000);
-}
-
 /** Keşif metadata'sına konan sabit örnek yanıt. */
 function sampleFor(tier: Tier) {
   return {
@@ -284,7 +279,12 @@ function agentCard(origin: string) {
  * breaking unrelated routes.
  */
 export function createPremiumRouter(): Router {
-  const router = express.Router();
+  // strict + caseSensitive kritik: Express varsayılanları "/api/premium/" ve
+  // "/API/PREMIUM" isteklerini de korumalı handler'a yönlendirir, oysa aşağıdaki
+  // kapı tam eşleşme arar. İkisi ayrışınca handler ödeme alınmadan çalışıyor ve
+  // ücretli içerik bedava servis ediliyordu. Router'ı kapıyla aynı katılıkta
+  // eşleştirerek ayrışmayı kaynağında kaldırıyoruz.
+  const router = express.Router({ strict: true, caseSensitive: true });
 
   let pending: Promise<ReturnType<typeof paymentMiddleware>> | null = null;
 
@@ -311,7 +311,26 @@ export function createPremiumRouter(): Router {
           // bazaarResourceServerExtension is not registered here: the express
           // adapter registers it itself whenever a route declares the bazaar
           // extension, and registering it twice is pointless.
-          .registerExtension(builderCodeResourceServerExtension);
+          .registerExtension(builderCodeResourceServerExtension)
+          // Sayaç burada, handler'da değil: handler settlement'tan ÖNCE
+          // çalışır, dolayısıyla orada sayılan bir ödeme sonradan zincirde
+          // başarısız olabilirdi. Bu kanca yalnızca settlement gerçekten
+          // tamamlandığında tetiklenir ve requirements.amount o an tahsil
+          // edilen tutarı taşır — metered uçta tavanı değil, override'ı.
+          .onAfterSettle(async (context) => {
+            // Kanca, facilitator hata FIRLATMADAN {success:false} döndüğünde de
+            // çalışır. O durumda para hareket etmez ve istemci hata alır, yani
+            // sayılmamalı.
+            if (!context.result.success) return;
+
+            try {
+              await recordPayment(Number(context.requirements.amount));
+            } catch (err) {
+              // Sayaç ödeme akışını asla bozmamalı: ödeme çoktan zincire
+              // yazıldı, burada fırlatmak onu geri almaz.
+              console.error("[stats] Ödeme sayılamadı:", err);
+            }
+          });
 
         // Payment requirements cannot be built until the facilitator has
         // reported which scheme/network pairs it supports.
@@ -360,9 +379,6 @@ export function createPremiumRouter(): Router {
   for (const tier of TIERS) {
     router.get(tier.route, (req, res) => {
       if (tier.scheme !== "upto") {
-        // Bu noktaya yalnızca ödeme middleware'i doğrulamayı geçirdiyse
-        // gelinir, yani sayılan şey gerçekten ödenmiş bir istektir.
-        void recordPayment(priceToAtomic(tier.price));
         res.json(premiumPayload(tier));
         return;
       }
@@ -380,9 +396,6 @@ export function createPremiumRouter(): Router {
       // kılar: zincire yazılan gerçek tahsilat budur, yetkilendirilen tavan
       // değil.
       setSettlementOverrides(res, { amount: String(chargedAtomic) });
-
-      // Tavan değil, gerçekte tahsil edilen tutar sayılır.
-      void recordPayment(chargedAtomic);
 
       res.json({
         ...premiumPayload(tier),
