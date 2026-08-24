@@ -8,7 +8,11 @@ import {
   declareBuilderCodeExtension,
   declareDiscoveryExtension,
 } from "@x402/extensions";
-import { createCdpFacilitatorClient, MissingConfigError } from "./_cdp-facilitator.js";
+import {
+  createCdpFacilitatorClient,
+  MissingConfigError,
+  missingEnvHint,
+} from "./_cdp-facilitator.js";
 
 /** Path of the x402-protected endpoint. */
 export const PREMIUM_ROUTE = "/api/premium";
@@ -30,7 +34,8 @@ function getPaymentRecipient(): string {
   const payTo = process.env.PAYMENT_RECIPIENT_ADDRESS;
   if (!payTo) {
     throw new MissingConfigError(
-      "PAYMENT_RECIPIENT_ADDRESS tanımlı değil. Ödemelerin gideceği Base adresini .env dosyasına ekleyin."
+      "PAYMENT_RECIPIENT_ADDRESS tanımlı değil. Ödemelerin gideceği Base adresini tanımlayın. " +
+        missingEnvHint()
     );
   }
   return payTo;

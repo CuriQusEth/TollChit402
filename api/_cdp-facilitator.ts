@@ -46,6 +46,23 @@ function normaliseApiKeyId(raw: string): string {
   );
 }
 
+/**
+ * Where the operator should actually set a missing variable.
+ *
+ * On Vercel there is no .env file to edit — the values come from the project's
+ * environment variables — so pointing at .env there sends people to a file that
+ * will never be read.
+ */
+export function missingEnvHint(): string {
+  if (process.env.VERCEL) {
+    return (
+      "Vercel'de Settings > Environment Variables altına ekleyin " +
+      "(ekledikten sonra yeniden dağıtım gerekir)."
+    );
+  }
+  return "Bu değerleri .env dosyanıza ekleyin (`cp .env.example .env`).";
+}
+
 /** Thrown when required environment configuration is absent. */
 export class MissingConfigError extends Error {
   constructor(message: string) {
@@ -81,8 +98,7 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
 
   if (!apiKeyId || !apiKeySecret) {
     throw new MissingConfigError(
-      `CDP kimlik bilgileri eksik: ${missing.join(", ")}. ` +
-        "Bu değerleri .env dosyanıza ekleyin (`cp .env.example .env`)."
+      `CDP kimlik bilgileri eksik: ${missing.join(", ")}. ` + missingEnvHint()
     );
   }
 
