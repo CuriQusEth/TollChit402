@@ -1,5 +1,5 @@
 /**
- * Toll402Pay markası.
+ * TollChit402 markası.
  *
  * İşaret satır içi SVG, kelime markası gerçek metin: public/brand/'daki .svg
  * dosyası da aynı kilidi çiziyor ama oradaki metin sistem yazı tipine bağlı
@@ -16,7 +16,7 @@ export function LogoMark({ className = 'w-8 h-8' }: { className?: string }) {
       viewBox="0 0 64 64"
       className={className}
       role="img"
-      aria-label="Toll402Pay"
+      aria-label="TollChit402"
       fill="none"
     >
       {/* Zemin çizgisi */}
@@ -86,7 +86,7 @@ export default function Logo() {
     <span className="flex items-center gap-2.5">
       <LogoMark className="w-8 h-8 shrink-0" />
       <span className="text-subhead font-bold tracking-tight text-text">
-        Toll<span className="text-accent">402</span>Pay
+        TollChit<span className="text-accent">402</span>
       </span>
     </span>
   );

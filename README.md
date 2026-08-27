@@ -1,4 +1,4 @@
-# Toll402Pay
+# TollChit402
 
 Base Mainnet üzerinde USDC ile x402 v2 mikro ödemeleri yapan bir demo. Uygulama
 hem **alıcı** hem **satıcı** tarafını içerir:
@@ -75,8 +75,8 @@ yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
 
 Logo bir otoyol gişe bariyeri: direk üstünde "402" yazan kontrol kutusu ve
 kalkmış — yani geçişe izin verilmiş — emerald bir kol. `public/brand/` altında
-işaret (`toll402pay-icon.svg`, aynı zamanda favicon), yatay kilit
-(`toll402pay-logo-wordmark.svg`) ve paylaşım önizlemesi (`toll402pay-og.png`)
+işaret (`tollchit402-icon.svg`, aynı zamanda favicon), yatay kilit
+(`tollchit402-logo-wordmark.svg`) ve paylaşım önizlemesi (`tollchit402-og.png`)
 var. Başlıktaki logo `src/components/Logo.tsx` içindeki satır içi sürümdür:
 kelime markası gerçek metin olduğu için her sistemde aynı görünür ve rengini
 token'lardan alır.
@@ -128,9 +128,23 @@ kaynaktan okur.
 ## Ödeme makbuzu NFT'si
 
 Başarılı her settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir ERC-721
-makbuz basılır (`contracts/PaymentReceipt.sol`). Makbuz ödemenin zincir üstü
+bilet basılır (`contracts/TollChit402.sol`). Bilet ödemenin zincir üstü
 kanıtıdır; metadata ve görsel tamamen zincir üstündedir (base64 `data:` URI,
 satır içi SVG), yani IPFS ya da Pinata gibi bir dış barındırıcıya bağlı değildir.
+
+**Konsept — klasik makbuz.** Bilet yırtılan bir gişe fişi biçiminde: solda
+perforasyonla ayrılmış koçanda mini bariyer ve "ADMIT ONE", sağda "TOLLCHIT",
+emerald çerçeveli "X402" rozeti, tutar ve seri numarası. Her ödeme tek seferlik
+bir geçiş hakkı; `tokenId` doğrudan seri numarasıdır (`NO. 000042`), yani ilk
+biletler doğal olarak düşük numaralı olur.
+
+Seri numarası görselin *içinde* durduğu için basımdan önce bilinmesi gerekiyor,
+ama kimliği kontrat mint sırasında veriyor. Akış bu yüzden şöyle: `nextTokenId()`
+okunur → bilet o numarayla üretilir → basılır → olaydan gelen gerçek kimlikle
+karşılaştırılır. Eşzamanlı iki basım araya girip tahmini bozarsa sunucu arka
+planda `setTokenURI` ile bileti doğru numarayla yeniden yazar — kalıcı bir ödeme
+kanıtının üzerinde yanlış numara durmasındansa düzeltilmesi yeğdir. Bu yol
+alıcıyı bekletmez ve ödemeyi hiç ilgilendirmez.
 
 Basım, sayaçla aynı ortak noktada — `api/_premium.ts`'teki tek `onAfterSettle`
 kancasında — duruyor. Paketten bağımsızdır: `shared/tiers.ts`'e eklenen yeni bir
@@ -153,7 +167,7 @@ Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişm
 
 ```json
 {
-  "service": "toll402pay",
+  "service": "tollchit402",
   "tier": "basic",
   "receipt": { "tokenId": "7", "txHash": "0x…", "contract": "0x…" }
 }
@@ -172,7 +186,7 @@ npm run deploy:receipt
 
 Betik `solc-js` ile derler ve viem'in `deployContract`'ıyla Base mainnet'e
 gönderir (projeye Foundry ya da Hardhat eklenmiyor). Çıkan adresi
-`RECEIPT_CONTRACT_ADDRESS` olarak tanımlayın. Dağıtan cüzdan kontratın sahibi
+`TOLLCHIT_CONTRACT_ADDRESS` olarak tanımlayın. Dağıtan cüzdan kontratın sahibi
 olur ve makbuzları yalnızca o basabilir — basım herkese açık olsaydı, ödeme
 yapmamış biri kendine sınırsız sahte makbuz basabilir ve makbuzun kanıt değeri
 kalmazdı.

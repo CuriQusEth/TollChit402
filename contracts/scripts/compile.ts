@@ -1,5 +1,5 @@
 /**
- * PaymentReceipt.sol'u solc-js ile derler.
+ * TollChit402.sol'u solc-js ile derler.
  *
  * Projeye Foundry ya da Hardhat eklenmiyor: tek bir kontrat için bütün bir
  * toolchain kurmak yerine solc'un JS dağıtımı doğrudan çağrılıyor. Derleme
@@ -16,8 +16,8 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** Derlenecek kontratın adı ve dosyası. */
-const CONTRACT_FILE = "PaymentReceipt.sol";
-const CONTRACT_NAME = "PaymentReceipt";
+const CONTRACT_FILE = "TollChit402.sol";
+const CONTRACT_NAME = "TollChit402";
 
 /** solc-js'in tip tanımı yok; kullandığımız tek fonksiyon bu. */
 type Solc = {
@@ -60,7 +60,7 @@ export type CompiledContract = {
 };
 
 /** Kontratı derler; bir hata varsa fırlatır. */
-export function compilePaymentReceipt(): CompiledContract {
+export function compileTollChit402(): CompiledContract {
   const solc = require("solc") as Solc;
   const source = fs.readFileSync(path.resolve(here, "..", CONTRACT_FILE), "utf8");
 

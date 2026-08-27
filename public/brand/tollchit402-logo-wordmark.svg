@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="280" height="64" viewBox="0 0 280 64" role="img" aria-label="Toll402Pay">
-  <title>Toll402Pay</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="340" height="64" viewBox="0 0 340 64" role="img" aria-label="TollChit402">
+  <title>TollChit402</title>
   <!--
     Yatay kilit: solda bariyer işareti, sağda kelime markası.
     Kelime markası sistem mono ailesiyle çiziliyor; arayüzdeki başlıkta bu
@@ -7,7 +7,7 @@
     (orada metin gerçek HTML olduğu için her sistemde aynı görünür). Bu dosya
     favicon/OG gibi harici kullanımlar için.
   -->
-  <rect width="280" height="64" fill="none"/>
+  <rect width="340" height="64" fill="none"/>
 
   <g>
     <path d="M8 50h48" stroke="#2a2a2a" stroke-width="2" stroke-linecap="round"/>
@@ -23,7 +23,7 @@
   </g>
 
   <text x="74" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-        font-size="26" font-weight="700" letter-spacing="-0.5">
-    <tspan fill="#f5f5f5">Toll</tspan><tspan fill="#10b981">402</tspan><tspan fill="#f5f5f5">Pay</tspan>
+        font-size="25" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#f5f5f5">TollChit</tspan><tspan fill="#10b981">402</tspan>
   </text>
 </svg>

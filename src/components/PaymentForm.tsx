@@ -36,7 +36,7 @@ const STEP_LABELS: Record<Exclude<PaymentStep, 'idle'>, string> = {
 const STEP_ORDER: PaymentStep[] = ['signing', 'verifying', 'settling', 'done'];
 
 /**
- * Ödemeden sonra basılan makbuz NFT'si.
+ * Ödemeden sonra basılan TollChit402 bileti (ERC-721, sembol CHIT402).
  *
  * Sunucu bu alanı yalnızca makbuz özelliği açıkken yanıta ekler ve basım
  * yapılamadıysa `null` gönderir; arayüz ikisini de sessizce karşılar.
@@ -417,6 +417,7 @@ export default function PaymentForm() {
             connectors.map((connector) => (
               <Button
                 key={connector.uid}
+                lang="en"
                 variant="secondary"
                 onClick={() => connect({ connector }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) })}
                 disabled={isConnecting}
@@ -425,7 +426,7 @@ export default function PaymentForm() {
               </Button>
             ))
           ) : (
-            <Button variant="secondary" onClick={() => disconnect()}>
+            <Button lang="en" variant="secondary" onClick={() => disconnect()}>
               Disconnect <LogOut className="w-3.5 h-3.5" />
             </Button>
           )}
@@ -450,7 +451,7 @@ export default function PaymentForm() {
                       : 'bg-transparent border-border text-muted hover:border-border-strong'
                   }`}
                 >
-                  <span className="block font-bold">{t.label}</span>
+                  <span lang="en" className="block font-bold">{t.label}</span>
                   <span className="block text-label opacity-70">
                     {t.scheme === 'upto' ? `≤ ${t.price}` : t.price}
                   </span>
@@ -463,7 +464,9 @@ export default function PaymentForm() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-label uppercase text-muted tracking-wider">Recipient Address (Ödeme bu adrese gider)</label>
+            <label className="text-label uppercase text-muted tracking-wider">
+              <span lang="en">Recipient Address</span> (Ödeme bu adrese gider)
+            </label>
             <input
               type="text"
               placeholder="0x… (boşsa sunucu ayarı kullanılır)"
@@ -474,7 +477,7 @@ export default function PaymentForm() {
           </div>
 
           <div className="pt-4">
-            <div className="flex justify-between items-end mb-4 border-b border-border pb-4">
+            <div lang="en" className="flex justify-between items-end mb-4 border-b border-border pb-4">
               <span className="text-label uppercase text-dim">Asset</span>
               <span className="text-body font-bold text-text">Base USDC</span>
             </div>
@@ -522,6 +525,7 @@ export default function PaymentForm() {
             {/* Tek `primary` düğme: emerald "geçişe izin ver" demek, o yüzden
                 yalnızca ödemeyi başlatan eylemde. */}
             <Button
+              lang="en"
               variant="primary"
               size="lg"
               onClick={handlePay}
@@ -551,7 +555,7 @@ export default function PaymentForm() {
 
       {txHash && (
         <Card tone="accent" className="mt-6">
-          <div className="flex justify-between text-body mb-2">
+          <div lang="en" className="flex justify-between text-body mb-2">
             <span className="text-accent font-bold uppercase flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5" /> TX Status: Success
             </span>
@@ -570,9 +574,9 @@ export default function PaymentForm() {
 
       {receipt && (
         <Card tone="accent" className="mt-6">
-          <div className="flex justify-between text-body mb-2">
+          <div lang="en" className="flex justify-between text-body mb-2">
             <span className="text-accent font-bold uppercase flex items-center gap-1.5">
-              <Ticket className="w-3.5 h-3.5" /> Receipt Minted 🎫
+              <Ticket className="w-3.5 h-3.5" /> TollChit402 Minted 🎫
             </span>
             <a
               href={`https://basescan.org/nft/${receipt.contract}/${receipt.tokenId}`}
@@ -580,11 +584,11 @@ export default function PaymentForm() {
               rel="noreferrer"
               className="text-dim hover:text-text transition-colors"
             >
-              View on Basescan ↗
+              View CHIT402 on Basescan ↗
             </a>
           </div>
           <div className="text-label text-muted">
-            Makbuz #{receipt.tokenId} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.
+            Bilet #{receipt.tokenId} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.
           </div>
         </Card>
       )}
