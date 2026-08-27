@@ -94,6 +94,43 @@ export type ReceiptParams = {
 /** Yapılandırma eksikse her istekte değil, süreç başına bir kez uyar. */
 let warnedAboutConfig = false;
 
+/** Eski değişken adı için uyarı da süreç başına bir kez. */
+let warnedAboutLegacyName = false;
+
+/**
+ * Kontrat adresini okur.
+ *
+ * Değişkenin adı TOLLCHIT_CONTRACT_ADDRESS; eskiden RECEIPT_CONTRACT_ADDRESS'ti.
+ * Eski ad da okunuyor çünkü dağıtım ortamlarındaki (Vercel gibi) değişkenler
+ * yeniden adlandırma ile birlikte otomatik güncellenmiyor — sadece adı eski
+ * kaldığı için basımın sessizce kapanması, teşhis edilmesi zor ve tamamen
+ * gereksiz bir arıza. Eski ad kullanıldığında bir kez uyarılıyor.
+ *
+ * @returns Okunan değer ve hangi değişkenden geldiği.
+ */
+export function readContractAddress(): {
+  value: string | undefined;
+  source: "TOLLCHIT_CONTRACT_ADDRESS" | "RECEIPT_CONTRACT_ADDRESS" | null;
+} {
+  const current = process.env.TOLLCHIT_CONTRACT_ADDRESS?.trim();
+  if (current) return { value: current, source: "TOLLCHIT_CONTRACT_ADDRESS" };
+
+  const legacy = process.env.RECEIPT_CONTRACT_ADDRESS?.trim();
+  if (legacy) {
+    if (!warnedAboutLegacyName) {
+      warnedAboutLegacyName = true;
+      console.warn(
+        "[receipt] Kontrat adresi eski RECEIPT_CONTRACT_ADDRESS değişkeninden " +
+          "okundu. Çalışıyor, ama değişkeni TOLLCHIT_CONTRACT_ADDRESS olarak " +
+          "yeniden adlandırın; eski ad ileride kaldırılacak."
+      );
+    }
+    return { value: legacy, source: "RECEIPT_CONTRACT_ADDRESS" };
+  }
+
+  return { value: undefined, source: null };
+}
+
 /**
  * Basım için gereken yapılandırmayı okur.
  *
@@ -103,13 +140,13 @@ let warnedAboutConfig = false;
 function readConfig():
   | { contract: `0x${string}`; key: `0x${string}` }
   | null {
-  const contract = process.env.TOLLCHIT_CONTRACT_ADDRESS?.trim();
+  const { value: contract } = readContractAddress();
   const key = process.env.RECEIPT_MINTER_PRIVATE_KEY?.trim();
 
   if (!contract && !key) return null; // Özellik kapalı; bu bir hata değil.
 
   const problem = !contract
-    ? "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil"
+    ? "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil (eski adı RECEIPT_CONTRACT_ADDRESS da okunur)"
     : !EVM_ADDRESS.test(contract)
       ? `TOLLCHIT_CONTRACT_ADDRESS geçersiz: "${contract}"`
       : !key

@@ -17,6 +17,7 @@
 import { createPublicClient, formatEther, http, type Address } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { readContractAddress } from "./_receipt.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
@@ -105,16 +106,22 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
   const done = (): Diagnosis => ({ ok: checks.every((c) => c.ok), checks });
 
   // --- 1. Yapılandırma ---
-  const contract = process.env.TOLLCHIT_CONTRACT_ADDRESS?.trim();
+  const { value: contract, source } = readContractAddress();
   const key = process.env.RECEIPT_MINTER_PRIVATE_KEY?.trim();
 
   const contractOk = Boolean(contract) && EVM_ADDRESS.test(contract as string);
   add({
-    name: "TOLLCHIT_CONTRACT_ADDRESS",
+    name: "Kontrat adresi",
     ok: contractOk,
-    detail: contract ? (contractOk ? contract : `geçersiz: "${contract}"`) : "tanımlı değil",
+    detail: contract
+      ? contractOk
+        ? `${contract}  (${source})`
+        : `geçersiz: "${contract}"  (${source})`
+      : "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil (eski adı RECEIPT_CONTRACT_ADDRESS da okunur)",
     fix: contractOk
-      ? undefined
+      ? source === "RECEIPT_CONTRACT_ADDRESS"
+        ? "Çalışıyor ama değişken eski adıyla duruyor; TOLLCHIT_CONTRACT_ADDRESS olarak yeniden adlandırın."
+        : undefined
       : "Basım kapalı. Dağıtılmış TollChit402 adresini ortam değişkenlerine ekleyin " +
         "(Vercel'de Settings > Environment Variables, ardından yeniden dağıtım).",
   });
@@ -289,4 +296,86 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
   }
 
   return done();
+}
+
+/** HTML'e gömülen metni zararsız hâle getirir. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Teşhisi tarayıcıda okunabilir bir sayfaya çevirir.
+ *
+ * Ham JSON'u tarayıcıda okumak zor ve hangi satıra bakılacağı belli değil.
+ * Burada başarısız kontroller en üstte, ne yapılacağıyla birlikte duruyor.
+ * Renkler arayüzün token'larıyla aynı (src/index.css).
+ */
+export function renderDiagnosisHtml(diagnosis: Diagnosis): string {
+  const failed = diagnosis.checks.filter((c) => !c.ok);
+
+  const row = (c: Check) => `
+    <div class="row ${c.ok ? "ok" : "bad"}">
+      <div class="mark">${c.ok ? "✓" : "✗"}</div>
+      <div class="body">
+        <div class="name">${escapeHtml(c.name)}</div>
+        <pre class="detail">${escapeHtml(c.detail)}</pre>
+        ${c.fix ? `<div class="fix">→ ${escapeHtml(c.fix)}</div>` : ""}
+      </div>
+    </div>`;
+
+  return `<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TollChit402 — bilet basımı teşhisi</title>
+<style>
+  :root{--bg:#050505;--surface:#0a0a0a;--surface2:#141414;--border:#1a1a1a;
+        --border2:#2a2a2a;--text:#f5f5f5;--muted:#8b8f98;--dim:#6b7280;
+        --accent:#10b981;--danger:#f87171}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);padding:32px 20px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.6}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:15px;letter-spacing:3px;text-transform:uppercase;margin:0 0 4px}
+  .verdict{padding:14px 16px;border:1px solid;border-radius:2px;margin:18px 0 26px}
+  .verdict.ok{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.25);color:var(--accent)}
+  .verdict.bad{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.25);color:var(--danger)}
+  .row{display:flex;gap:12px;padding:12px 14px;border:1px solid var(--border);
+       border-radius:2px;background:var(--surface);margin-bottom:8px}
+  .row.bad{border-color:rgba(248,113,113,.25);background:rgba(248,113,113,.06)}
+  .mark{flex:0 0 16px}
+  .row.ok .mark{color:var(--accent)}
+  .row.bad .mark{color:var(--danger)}
+  .name{font-weight:700;letter-spacing:1.5px;font-size:12px}
+  .detail{margin:4px 0 0;white-space:pre-wrap;word-break:break-word;color:var(--muted);font-size:12px}
+  .fix{margin-top:8px;padding:8px 10px;background:var(--surface2);
+       border-left:2px solid var(--accent);color:var(--text);font-size:12px}
+  .sub{color:var(--dim);font-size:11px;letter-spacing:2px;text-transform:uppercase}
+  .foot{margin-top:26px;color:var(--dim);font-size:11px}
+  a{color:var(--muted)}
+</style></head>
+<body><div class="wrap">
+  <h1><span lang="en">TollChit402</span> — bilet basımı teşhisi</h1>
+  <div class="sub">Bu sayfa ödeme yapmadan yapılandırmayı ve zinciri kontrol eder</div>
+
+  <div class="verdict ${diagnosis.ok ? "ok" : "bad"}">
+    ${
+      diagnosis.ok
+        ? "Her kontrol başarılı. Basım çalışmalı; yine de bilet gelmiyorsa sunucu loglarındaki [receipt] satırlarına bakın."
+        : `${failed.length} kontrol başarısız — aşağıdaki “→” satırları ne yapılacağını söylüyor.`
+    }
+  </div>
+
+  ${failed.map(row).join("")}
+  ${failed.length ? '<div class="sub" style="margin:22px 0 10px">Başarılı kontroller</div>' : ""}
+  ${diagnosis.checks.filter((c) => c.ok).map(row).join("")}
+
+  <div class="foot">
+    Ham JSON: <a href="?format=json">?format=json</a> ·
+    Yerelde aynı kontroller: <code>npm run doctor:receipt</code>
+  </div>
+</div></body></html>`;
 }

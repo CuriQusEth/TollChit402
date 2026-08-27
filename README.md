@@ -192,9 +192,16 @@ Dağıtılmış ortamda log okumak zorsa aynı kontroller bir URL'den de alınab
 GET /api/receipt-status
 ```
 
-Her şey yolundaysa `200`, bir kontrol başarısızsa `503` döner. Yanıt yalnızca
-herkese açık zincir verisi içerir (kontrat ve basım cüzdanı adresleri, bakiye,
-kontrat okumaları) — private key hiçbir çıktıya girmez.
+Tarayıcıdan açıldığında başarısız kontrolleri ve ne yapılacağını gösteren bir
+sayfa döner; `curl` ve izleme araçları JSON alır (`?format=json` ile de zorlanır).
+Her şey yolundaysa `200`, bir kontrol başarısızsa `503`. Yanıt yalnızca herkese
+açık zincir verisi içerir (kontrat ve basım cüzdanı adresleri, bakiye, kontrat
+okumaları) — private key hiçbir çıktıya girmez.
+
+Kontrat adresi `TOLLCHIT_CONTRACT_ADDRESS`'ten okunur; bulunamazsa eski adı
+`RECEIPT_CONTRACT_ADDRESS` da denenir ve bir kez uyarı verilir. Dağıtım
+ortamlarındaki değişkenler yeniden adlandırmayla birlikte güncellenmediği için
+bu geçiş desteği var — ama eski adı kalıcı bırakmayın.
 
 Betik yapılandırmayı okur, zinciri sorgular ve `mint` çağrısını **simüle eder**
 (gaz harcamadan). Sırayla kontrol ettikleri: env değişkenleri, RPC'nin Base

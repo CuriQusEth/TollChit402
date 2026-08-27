@@ -17,7 +17,10 @@ import {
 import { TIERS, type Tier } from "../shared/tiers.js";
 import { readStats, recordPayment } from "./_stats.js";
 import { mintReceipt, receiptContractAddress } from "./_receipt.js";
-import { diagnoseReceiptMinting } from "./_receipt-doctor.js";
+import {
+  diagnoseReceiptMinting,
+  renderDiagnosisHtml,
+} from "./_receipt-doctor.js";
 import {
   currentReceiptSlot,
   withReceiptSlot,
@@ -555,13 +558,28 @@ export function createPremiumRouter(): Router {
     res.json(await readStats());
   });
 
-  router.get(RECEIPT_STATUS_ROUTE, async (_req, res) => {
+  router.get(RECEIPT_STATUS_ROUTE, async (req, res) => {
     // Zincir sorgusu içerir; önbelleğe alınmamalı.
     res.setHeader("Cache-Control", "no-store");
+
+    // Tarayıcıdan açıldığında okunabilir bir sayfa, araçlara JSON. Ham JSON'u
+    // tarayıcıda okumak zor ve hangi satıra bakılacağı belli olmuyordu.
+    // Yalnızca Accept başlığı text/html'i AÇIKÇA istediğinde sayfa döner.
+    // req.accepts("html") kullanılmıyor çünkü curl'ün "*/*" başlığını da html
+    // sayıyor ve betikler JSON yerine sayfa alıyordu.
+    const wantsHtml =
+      req.query.format !== "json" &&
+      (req.headers.accept ?? "").toLowerCase().includes("text/html");
+
     try {
       const diagnosis = await diagnoseReceiptMinting();
       // Bir kontrol başarısızsa 200 yerine 503: izleme araçları da görsün.
-      res.status(diagnosis.ok ? 200 : 503).json(diagnosis);
+      res.status(diagnosis.ok ? 200 : 503);
+      if (wantsHtml) {
+        res.type("html").send(renderDiagnosisHtml(diagnosis));
+      } else {
+        res.json(diagnosis);
+      }
     } catch (err) {
       console.error("[receipt] Teşhis çalıştırılamadı:", err);
       res.status(500).json({
