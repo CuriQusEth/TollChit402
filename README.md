@@ -186,6 +186,16 @@ zorlaştırır. Teşhis için gerçek bir ödemeye gerek yok:
 npm run doctor:receipt
 ```
 
+Dağıtılmış ortamda log okumak zorsa aynı kontroller bir URL'den de alınabilir:
+
+```
+GET /api/receipt-status
+```
+
+Her şey yolundaysa `200`, bir kontrol başarısızsa `503` döner. Yanıt yalnızca
+herkese açık zincir verisi içerir (kontrat ve basım cüzdanı adresleri, bakiye,
+kontrat okumaları) — private key hiçbir çıktıya girmez.
+
 Betik yapılandırmayı okur, zinciri sorgular ve `mint` çağrısını **simüle eder**
 (gaz harcamadan). Sırayla kontrol ettikleri: env değişkenleri, RPC'nin Base
 mainnet olması, adreste kontrat bulunması, ABI uyumu (`totalMinted`, `symbol`),
@@ -199,6 +209,8 @@ Sunucu loglarında aranacak satırlar `[receipt]` ile başlar:
 | --- | --- |
 | `Bilet basımı kapalı: …` | env eksik ya da geçersiz |
 | `Ödeyen adres bulunamadı` | settlement yanıtından ödeyen çıkarılamadı |
+| `Bilet #N gönderildi` | işlem gönderildi, bilet yanıta kondu |
+| `Bilet #N onaylandı` | işlem zincirde onaylandı |
 | `Basım işlemi revert etti: <tx>` | işlem zincire gitti ve reddedildi |
 | `Bilet basılamadı: <err>` | işlem gönderilmeden önce hata (gaz, RPC, adres) |
 | `ChitMinted olayı okunamadı` | işlem başarılı ama ABI olayı çözemedi |
