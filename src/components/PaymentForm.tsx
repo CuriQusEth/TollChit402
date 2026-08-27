@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
-import { Loader2, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Ticket } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from '@x402/fetch';
 import type { ClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
@@ -8,6 +8,8 @@ import { UptoEvmScheme } from '@x402/evm/upto/client';
 import { ExactEvmSchemeV1 } from '@x402/evm/v1';
 import ToastStack, { type ToastMessage, type ToastKind } from './Toast';
 import { TIERS, type TierId } from '../../shared/tiers';
+import Button from './ui/Button';
+import Card from './ui/Card';
 import {
   appendRecord,
   clearHistory,
@@ -32,6 +34,18 @@ const STEP_LABELS: Record<Exclude<PaymentStep, 'idle'>, string> = {
 };
 
 const STEP_ORDER: PaymentStep[] = ['signing', 'verifying', 'settling', 'done'];
+
+/**
+ * Ödemeden sonra basılan makbuz NFT'si.
+ *
+ * Sunucu bu alanı yalnızca makbuz özelliği açıkken yanıta ekler ve basım
+ * yapılamadıysa `null` gönderir; arayüz ikisini de sessizce karşılar.
+ */
+type Receipt = {
+  tokenId: string;
+  txHash: string;
+  contract: string;
+};
 
 /**
  * Some wallets return the EIP-712 recovery byte (`v`) as 0x00/0x01 rather than
@@ -102,6 +116,7 @@ export default function PaymentForm() {
   const [recipient, setRecipient] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<PaymentStep>('idle');
   // Hata anında hangi aşamada kalındığını göstermek için; 'error' bunu kaybeder.
@@ -163,6 +178,7 @@ export default function PaymentForm() {
     setIsPaying(true);
     setError(null);
     setTxHash(null);
+    setReceipt(null);
     setStep('signing');
     setFailedAt('signing');
 
@@ -348,6 +364,16 @@ export default function PaymentForm() {
         console.warn('Settlement başlığı çözülemedi', e);
       }
 
+      // Makbuz, ödemenin yanıt gövdesinde gelir (bkz. api/_receipt-response.ts).
+      // Özellik kapalıysa alan hiç yoktur, basım yetişmediyse null gelir —
+      // ikisinde de kart gösterilmez, çünkü ödemenin kendisi başarılı.
+      try {
+        const body = (await response.json()) as { receipt?: Receipt | null };
+        if (body?.receipt?.tokenId) setReceipt(body.receipt);
+      } catch (e) {
+        console.warn('Yanıt gövdesi okunamadı', e);
+      }
+
       setTxHash(finalTxHash);
       setStep('done');
 
@@ -379,35 +405,35 @@ export default function PaymentForm() {
 
   return (
     <div className="w-full relative">
-      <div className="bg-[#0d0d0d] border-2 border-emerald-500/30 p-6 sm:p-8 shadow-[0_0_50px_rgba(16,185,129,0.1)] relative">
-        <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-500"></div>
-        <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-500"></div>
+      {/* Terminal paneli. Kenarlık ve köşe işaretleri artık emerald değil:
+          hiçbir durum bildirmiyorlardı ve emerald'i her yere dağıtmak, gerçekten
+          "ödendi" diyen yerlerde göze çarpmasını engelliyordu. */}
+      <div className="bg-surface border-2 border-border-strong rounded-sm p-6 sm:p-8 relative">
+        <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-border-strong"></div>
+        <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-border-strong"></div>
 
         <div className="flex items-center justify-end mb-6 gap-2 flex-wrap">
           {!isConnected ? (
             connectors.map((connector) => (
-              <button
+              <Button
                 key={connector.uid}
+                variant="secondary"
                 onClick={() => connect({ connector }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) })}
                 disabled={isConnecting}
-                className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 flex items-center gap-2 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 py-2 px-4 border border-emerald-500/20"
               >
                 {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Connect ${connector.name}`}
-              </button>
+              </Button>
             ))
           ) : (
-            <button
-              onClick={() => disconnect()}
-              className="text-[10px] font-mono uppercase tracking-widest text-gray-400 hover:text-gray-200 flex items-center gap-2 transition-colors bg-[#141414] hover:bg-[#222] py-2 px-4 border border-[#333]"
-            >
+            <Button variant="secondary" onClick={() => disconnect()}>
               Disconnect <LogOut className="w-3.5 h-3.5" />
-            </button>
+            </Button>
           )}
         </div>
         
         <div className="space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">
+            <label className="text-label uppercase text-muted tracking-wider">
               Paket
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -417,42 +443,43 @@ export default function PaymentForm() {
                   type="button"
                   onClick={() => setTierId(t.id)}
                   disabled={isPaying}
-                  className={`px-2 py-2 border text-[10px] font-mono uppercase tracking-widest transition-colors disabled:opacity-50 ${
+                  className={`px-2 py-2 border rounded-sm text-label uppercase tracking-widest transition-colors disabled:opacity-50 ${
+                    // Seçili paket emerald: "etkin" gerçek bir durum.
                     tierId === t.id
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
-                      : 'bg-transparent border-[#333] text-gray-400 hover:border-gray-500'
+                      ? 'bg-accent-surface border-accent text-accent'
+                      : 'bg-transparent border-border text-muted hover:border-border-strong'
                   }`}
                 >
                   <span className="block font-bold">{t.label}</span>
-                  <span className="block text-[9px] opacity-70">
+                  <span className="block text-label opacity-70">
                     {t.scheme === 'upto' ? `≤ ${t.price}` : t.price}
                   </span>
                 </button>
               ))}
             </div>
-            <p className="text-[9px] font-mono text-gray-600 leading-relaxed">
+            <p className="text-label text-dim leading-relaxed">
               {TIERS.find((t) => t.id === tierId)?.description}
             </p>
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-mono uppercase text-gray-400 tracking-wider">Recipient Address (Ödeme bu adrese gider)</label>
+            <label className="text-label uppercase text-muted tracking-wider">Recipient Address (Ödeme bu adrese gider)</label>
             <input
               type="text"
               placeholder="0x… (boşsa sunucu ayarı kullanılır)"
               value={recipient}
               onChange={(e) => setRecipient(e.target.value.trim())}
-              className="w-full bg-black border border-[#222] px-4 py-3 font-mono text-sm focus:border-emerald-500 outline-none transition-colors text-white"
+              className="w-full bg-bg border border-border rounded-sm px-4 py-3 text-body focus:border-border-strong outline-none transition-colors text-text"
             />
           </div>
 
           <div className="pt-4">
-            <div className="flex justify-between items-end mb-4 border-b border-[#222] pb-4">
-              <span className="text-[10px] font-mono uppercase text-gray-500">Asset</span>
-              <span className="font-bold text-white">Base USDC</span>
+            <div className="flex justify-between items-end mb-4 border-b border-border pb-4">
+              <span className="text-label uppercase text-dim">Asset</span>
+              <span className="text-body font-bold text-text">Base USDC</span>
             </div>
             {step !== 'idle' && (
-              <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono uppercase tracking-widest">
+              <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-label uppercase tracking-widest">
                 {STEP_ORDER.map((s, i) => {
                   // Hata durumunda yalnızca ulaşılan aşamalar gösterilir:
                   // "Tamamlandı" ile "Başarısız"ı yan yana göstermek çelişkiliydi.
@@ -468,22 +495,19 @@ export default function PaymentForm() {
                     <span
                       key={s}
                       className={`flex items-center gap-1.5 ${
-                        isFailed
-                          ? 'text-red-400'
-                          : reached
-                            ? 'text-emerald-400'
-                            : 'text-gray-600'
+                        // Emerald burada anlamlı: aşama gerçekten tamamlandı.
+                        isFailed ? 'text-danger' : reached ? 'text-accent' : 'text-dim'
                       }`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
                           isFailed
-                            ? 'bg-red-500'
+                            ? 'bg-danger'
                             : isActive
-                              ? 'bg-emerald-400 animate-pulse'
+                              ? 'bg-accent animate-pulse'
                               : reached
-                                ? 'bg-emerald-500'
-                                : 'bg-[#333]'
+                                ? 'bg-accent'
+                                : 'bg-border-strong'
                         }`}
                       />
                       {isFailed
@@ -495,10 +519,13 @@ export default function PaymentForm() {
               </div>
             )}
 
-            <button
+            {/* Tek `primary` düğme: emerald "geçişe izin ver" demek, o yüzden
+                yalnızca ödemeyi başlatan eylemde. */}
+            <Button
+              variant="primary"
+              size="lg"
               onClick={handlePay}
               disabled={isPaying || !isConnected}
-              className={`w-full ${!isConnected ? 'bg-[#222] text-gray-500' : 'bg-emerald-500 hover:bg-emerald-400 text-black'} disabled:opacity-50 font-black uppercase py-5 text-sm tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2`}
             >
               {isPaying ? (
                 <>
@@ -510,73 +537,92 @@ export default function PaymentForm() {
               ) : (
                 "Process Payment"
               )}
-            </button>
+            </Button>
           </div>
 
           {error && (
-            <div className="flex items-center gap-3 bg-red-950/30 p-3 border border-red-500/20 text-red-400 text-[10px] font-mono uppercase">
+            <Card tone="danger" className="flex items-center gap-3 p-3 text-danger text-label uppercase">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <p>{error}</p>
-            </div>
+            </Card>
           )}
         </div>
       </div>
 
       {txHash && (
-        <div className="mt-6 bg-emerald-900/10 border border-emerald-500/20 p-4 shadow-[0_0_30px_rgba(16,185,129,0.05)]">
-          <div className="flex justify-between text-[11px] mb-2">
-            <span className="text-emerald-400 font-bold uppercase flex items-center gap-1.5">
+        <Card tone="accent" className="mt-6">
+          <div className="flex justify-between text-body mb-2">
+            <span className="text-accent font-bold uppercase flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5" /> TX Status: Success
             </span>
             <a
               href={`https://basescan.org/tx/${txHash}`}
               target="_blank"
               rel="noreferrer"
-              className="text-gray-500 hover:text-white transition-colors"
+              className="text-dim hover:text-text transition-colors"
             >
               View on Basescan ↗
             </a>
           </div>
-          <div className="font-mono text-[10px] text-gray-400 break-all">{txHash}</div>
-        </div>
+          <div className="text-label text-muted break-all">{txHash}</div>
+        </Card>
+      )}
+
+      {receipt && (
+        <Card tone="accent" className="mt-6">
+          <div className="flex justify-between text-body mb-2">
+            <span className="text-accent font-bold uppercase flex items-center gap-1.5">
+              <Ticket className="w-3.5 h-3.5" /> Receipt Minted 🎫
+            </span>
+            <a
+              href={`https://basescan.org/nft/${receipt.contract}/${receipt.tokenId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-dim hover:text-text transition-colors"
+            >
+              View on Basescan ↗
+            </a>
+          </div>
+          <div className="text-label text-muted">
+            Makbuz #{receipt.tokenId} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.
+          </div>
+        </Card>
       )}
 
       {history.length > 0 && (
-        <div className="mt-6 bg-[#0a0a0a] border border-[#222] p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#222] pb-2">
-            <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-gray-300">
+        <Card className="mt-6">
+          <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
+            <h3 className="text-label font-bold uppercase tracking-widest text-text">
               İşlem Geçmişi
-              <span className="text-gray-600 ml-2">({history.length})</span>
+              <span className="text-dim ml-2">({history.length})</span>
             </h3>
-            <button
-              onClick={() => setHistory(clearHistory())}
-              className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-red-400 transition-colors"
-            >
+            <Button variant="ghost" size="sm" onClick={() => setHistory(clearHistory())}>
               Temizle
-            </button>
+            </Button>
           </div>
 
-          <ul className="max-h-56 overflow-y-auto divide-y divide-[#1a1a1a]">
+          <ul className="max-h-56 overflow-y-auto divide-y divide-border">
             {history.map((record) => (
               <li
                 key={record.txHash}
-                className="flex items-center justify-between gap-3 py-2 text-[10px] font-mono"
+                className="flex items-center justify-between gap-3 py-2 text-label"
               >
                 <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-emerald-400 font-bold">{record.amount}</span>
-                  <span className="text-gray-500 truncate">
+                  {/* Tutar emerald: bu satır tamamlanmış bir ödeme. */}
+                  <span className="text-accent font-bold">{record.amount}</span>
+                  <span className="text-muted truncate">
                     {record.recipient.startsWith('0x')
                       ? shortAddress(record.recipient)
                       : record.recipient}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-gray-600">{relativeTime(record.timestamp)}</span>
+                  <span className="text-dim">{relativeTime(record.timestamp)}</span>
                   <a
                     href={`https://basescan.org/tx/${record.txHash}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-gray-500 hover:text-emerald-400 transition-colors"
+                    className="text-dim hover:text-text transition-colors"
                   >
                     Basescan ↗
                   </a>
@@ -584,7 +630,7 @@ export default function PaymentForm() {
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       )}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

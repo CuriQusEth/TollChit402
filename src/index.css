@@ -1,1 +1,87 @@
 @import "tailwindcss";
+
+/*
+ * Toll402Pay tasarım token'ları.
+ *
+ * Buradan önce arayüzde yedi ayrı "neredeyse siyah" ton dolaşıyordu (#050505,
+ * #0a0a0a, #0d0d0d, #141414, #1a1a1a, #222, #333) ve hangisinin nerede
+ * kullanılacağına dair bir kural yoktu. Artık her renk tek kaynaktan geliyor.
+ *
+ * Tailwind 4'ün @theme direktifi bu değişkenleri hem gerçek CSS özel
+ * değişkenleri olarak :root'a yazar hem de utility sınıfı üretir — yani
+ * `bg-surface`, `border-border`, `text-muted` doğrudan kullanılabilir ve
+ * ayrıca `var(--color-surface)` da geçerlidir. Bu yüzden ayrıca bir --t402-*
+ * takma adı tanımlanmıyor: aynı rengin iki adı olması, ortadan kaldırmaya
+ * çalıştığımız dağınıklığın ta kendisi olurdu.
+ */
+@theme {
+  /* --- Yüzeyler --- */
+  --color-bg: #050505;          /* sayfa zemini */
+  --color-surface: #0a0a0a;     /* kartlar, paneller */
+  --color-surface-2: #141414;   /* yükseltilmiş / hover yüzey */
+
+  /* --- Kenarlıklar --- */
+  --color-border: #1a1a1a;         /* varsayılan saç teli kenarlık */
+  --color-border-strong: #2a2a2a;  /* vurgulu kenarlık, kontrol kutusu hissi */
+
+  /* --- Metin --- */
+  --color-text: #f5f5f5;
+  --color-muted: #8b8f98;
+  --color-dim: #6b7280;
+
+  /*
+   * --- Vurgu ---
+   * Emerald tek imza rengi ve anlamı var: "ödendi / etkin / başarılı / açık" —
+   * logodaki kalkmış bariyer kolu. Süs olarak kullanılmıyor; kullanıldığı her
+   * yer bir durum bildiriyor.
+   */
+  --color-accent: #10b981;
+  --color-accent-surface: rgba(16, 185, 129, 0.08);
+  --color-accent-border: rgba(16, 185, 129, 0.25);
+  --color-accent-glow: rgba(16, 185, 129, 0.35);
+
+  /*
+   * --- Hata ---
+   * Verilen token listesinde bir hata rengi yoktu, ama hata durumları
+   * (başarısız ödeme, hata bildirimi) token'sız kalamazdı; sistemi kapatmak
+   * için eklendi.
+   */
+  --color-danger: #f87171;
+  --color-danger-surface: rgba(248, 113, 113, 0.08);
+  --color-danger-border: rgba(248, 113, 113, 0.25);
+
+  /*
+   * --- Tipografi ---
+   * Logo tek başına mono bir kimlik kuruyor; arayüzde hiçbir yerde sans-serif'e
+   * düşülmüyor. Ölçek dört basamak: etiket, gövde, ara başlık, gösterim.
+   * `hero` ayrı tutuldu çünkü ölçeğin bir basamağı değil, tek bir sayfa öğesi.
+   */
+  --font-sans: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --font-mono: var(--font-sans);
+
+  --text-label: 0.625rem;    /* 10px — büyük harf mikro etiketler */
+  --text-body: 0.6875rem;    /* 11px — mono gövde metni */
+  --text-subhead: 0.875rem;  /* 14px — ara başlık, düğme metni */
+  --text-display: 1.5rem;    /* 24px — sayaç rakamları, kart başlıkları */
+  --text-hero: clamp(4rem, 13vw, 8.125rem);
+
+  /* --- Köşe yarıçapı --- */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+}
+
+/*
+ * Mono kimlik tek yerden kuruluyor; bileşenlerin ayrıca font ailesi
+ * belirtmesine gerek yok.
+ */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}

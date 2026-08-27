@@ -1,4 +1,4 @@
-# x402-Pay
+# Toll402Pay
 
 Base Mainnet üzerinde USDC ile x402 v2 mikro ödemeleri yapan bir demo. Uygulama
 hem **alıcı** hem **satıcı** tarafını içerir:
@@ -71,6 +71,44 @@ demosudur — gelir toplama yolu değil, çünkü ziyaretçi kendi cüzdanını
 yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
 `PAYMENT_RECIPIENT_ADDRESS` tanımlayın ve arayüzdeki alanı kaldırın.
 
+## Marka ve tasarım token'ları
+
+Logo bir otoyol gişe bariyeri: direk üstünde "402" yazan kontrol kutusu ve
+kalkmış — yani geçişe izin verilmiş — emerald bir kol. `public/brand/` altında
+işaret (`toll402pay-icon.svg`, aynı zamanda favicon), yatay kilit
+(`toll402pay-logo-wordmark.svg`) ve paylaşım önizlemesi (`toll402pay-og.png`)
+var. Başlıktaki logo `src/components/Logo.tsx` içindeki satır içi sürümdür:
+kelime markası gerçek metin olduğu için her sistemde aynı görünür ve rengini
+token'lardan alır.
+
+Bütün renkler `src/index.css`'teki `@theme` bloğundan gelir. Tailwind 4 bu
+değişkenleri hem `:root`'a CSS özel değişkeni olarak yazar hem de utility
+üretir, yani `bg-surface`, `border-border`, `text-muted` doğrudan kullanılabilir.
+
+| Token | Değer | Nerede |
+| --- | --- | --- |
+| `bg` | `#050505` | sayfa zemini |
+| `surface` | `#0a0a0a` | kartlar, paneller |
+| `surface-2` | `#141414` | yükseltilmiş yüzey |
+| `border` | `#1a1a1a` | varsayılan kenarlık |
+| `border-strong` | `#2a2a2a` | vurgulu kenarlık |
+| `text` / `muted` / `dim` | `#f5f5f5` / `#8b8f98` / `#6b7280` | metin kademeleri |
+| `accent` | `#10b981` | **yalnızca** ödendi / etkin / başarılı |
+| `danger` | `#f87171` | hata durumları |
+
+**Vurgu disiplini:** emerald tek imza rengi ve tek anlamı var — logodaki kalkmış
+kol gibi "geçişe izin verildi". Süs olarak kullanılmıyor. Bu yüzden ödeme
+panelinin kenarlığı, köşe işaretleri, kahraman başlığındaki kontur ve
+istatistik simgesi artık nötr; emerald yalnızca seçili pakette, ödeme düğmesinde,
+tamamlanan aşamalarda, başarı/makbuz kartlarında ve ağ durumu noktasında.
+
+Tipografi tek bir mono aile; ölçek dört basamak (`text-label` 10px,
+`text-body` 11px, `text-subhead` 14px, `text-display` 24px) artı sayfada tek
+kullanımı olan `text-hero`. Kart ve düğme görünümü `src/components/ui/`
+altındaki `Card` ve `Button` bileşenlerinde toplandı; global bir `.card` sınıfı
+yerine bileşen tercih edildi çünkü öyle bir sınıf Tailwind utility'leriyle
+özgüllük yarışına girebilirdi.
+
 ## Paketler
 
 | Paket | Yol | Şema | Fiyat |
@@ -86,6 +124,58 @@ tahsil eder. Talep edilen birim sayısı tavana kırpılır, çünkü yetkilendi
 
 Paket tablosu `shared/tiers.ts` içindedir; sunucu, tarayıcı ve agent card aynı
 kaynaktan okur.
+
+## Ödeme makbuzu NFT'si
+
+Başarılı her settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir ERC-721
+makbuz basılır (`contracts/PaymentReceipt.sol`). Makbuz ödemenin zincir üstü
+kanıtıdır; metadata ve görsel tamamen zincir üstündedir (base64 `data:` URI,
+satır içi SVG), yani IPFS ya da Pinata gibi bir dış barındırıcıya bağlı değildir.
+
+Basım, sayaçla aynı ortak noktada — `api/_premium.ts`'teki tek `onAfterSettle`
+kancasında — duruyor. Paketten bağımsızdır: `shared/tiers.ts`'e eklenen yeni bir
+paket hiçbir kod değişikliği olmadan makbuz kazanır.
+
+**Alıcının ödemesi gazsızdır, basım değildir.** Alıcı EIP-3009 ile yalnızca imza
+atar ve gazı facilitator öder. Makbuz basımı ise gerçek bir zincir üstü yazma
+işlemidir ve gazını **proje** öder. `RECEIPT_MINTER_PRIVATE_KEY` cüzdanında Base
+ağında küçük bir ETH bakiyesi bulunmalı ve elle doldurulmalıdır.
+
+Basım hiçbir koşulda ödemeyi etkilemez:
+
+- Ödeme başarısızsa (settlement `success:false`) basım hiç denenmez.
+- Basım başarısız olursa (gaz bitti, RPC düştü, kontrat revert etti) hata
+  yutulur, günlüğe yazılır ve alıcı normal başarılı yanıtını alır.
+- Basım `RECEIPT_MINT_WAIT_MS` (varsayılan 4000 ms) içinde bitmezse alıcı
+  beklemez: yanıt makbuzsuz gider, basım arka planda tamamlanır.
+
+Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişmez:
+
+```json
+{
+  "service": "toll402pay",
+  "tier": "basic",
+  "receipt": { "tokenId": "7", "txHash": "0x…", "contract": "0x…" }
+}
+```
+
+Makbuz özelliği yapılandırılmamışsa alan hiç eklenmez; basım yetişmediyse `null`
+olur. Arayüz ikisinde de sessiz kalır — ödemenin kendisi başarılıdır.
+
+### Dağıtım
+
+Kontrat bir kez, elle dağıtılır:
+
+```bash
+npm run deploy:receipt
+```
+
+Betik `solc-js` ile derler ve viem'in `deployContract`'ıyla Base mainnet'e
+gönderir (projeye Foundry ya da Hardhat eklenmiyor). Çıkan adresi
+`RECEIPT_CONTRACT_ADDRESS` olarak tanımlayın. Dağıtan cüzdan kontratın sahibi
+olur ve makbuzları yalnızca o basabilir — basım herkese açık olsaydı, ödeme
+yapmamış biri kendine sınırsız sahte makbuz basabilir ve makbuzun kanıt değeri
+kalmazdı.
 
 ## İstatistikler
 

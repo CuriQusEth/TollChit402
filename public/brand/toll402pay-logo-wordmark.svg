@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="64" viewBox="0 0 280 64" role="img" aria-label="Toll402Pay">
+  <title>Toll402Pay</title>
+  <!--
+    Yatay kilit: solda bariyer işareti, sağda kelime markası.
+    Kelime markası sistem mono ailesiyle çiziliyor; arayüzdeki başlıkta bu
+    dosya değil, src/components/Logo.tsx içindeki satır içi sürüm kullanılıyor
+    (orada metin gerçek HTML olduğu için her sistemde aynı görünür). Bu dosya
+    favicon/OG gibi harici kullanımlar için.
+  -->
+  <rect width="280" height="64" fill="none"/>
+
+  <g>
+    <path d="M8 50h48" stroke="#2a2a2a" stroke-width="2" stroke-linecap="round"/>
+    <g transform="rotate(-38 18 34)">
+      <rect x="18" y="30" width="36" height="8" rx="2" fill="#10b981"/>
+      <path d="M27 30v8M36 30v8M45 30v8" stroke="#050505" stroke-width="3"/>
+    </g>
+    <circle cx="18" cy="34" r="3" fill="#0a0a0a" stroke="#10b981" stroke-width="2"/>
+    <rect x="10" y="14" width="16" height="14" rx="2" fill="#0a0a0a" stroke="#2a2a2a" stroke-width="1.5"/>
+    <text x="18" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="8" font-weight="700" fill="#f5f5f5" text-anchor="middle" letter-spacing="0.5">402</text>
+    <rect x="15" y="28" width="6" height="22" fill="#141414" stroke="#2a2a2a" stroke-width="1.5"/>
+  </g>
+
+  <text x="74" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="26" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#f5f5f5">Toll</tspan><tspan fill="#10b981">402</tspan><tspan fill="#f5f5f5">Pay</tspan>
+  </text>
+</svg>

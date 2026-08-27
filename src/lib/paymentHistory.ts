@@ -6,6 +6,9 @@
  * tarayıcı ayarında okuma/yazma hata fırlatabildiği için her erişim korunuyor.
  */
 
+// Marka Toll402Pay olarak değişti ama bu anahtar bilinçli olarak eski adında
+// bırakıldı: değiştirmek, kullanıcıların tarayıcısında duran geçmişi bir anda
+// erişilemez kılardı. Yeniden adlandırma ancak bir taşıma adımıyla anlamlı olur.
 const STORAGE_KEY = "x402-pay:history";
 const MAX_RECORDS = 20;
 

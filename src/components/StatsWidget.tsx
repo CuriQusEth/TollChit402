@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, ExternalLink } from 'lucide-react';
+import Card from './ui/Card';
 
 type Stats = {
   totalPayments: number;
@@ -24,33 +25,35 @@ export default function StatsWidget() {
 
   return (
     <div className="w-full max-w-5xl mx-auto px-6 md:px-12 mb-12">
-      <div className="bg-[#0a0a0a] border border-[#222] p-5 font-mono">
-        <div className="flex items-center gap-2 mb-4 border-b border-[#222] pb-3">
-          <Activity className="text-emerald-500 w-4 h-4" />
-          <h2 className="text-[11px] font-bold uppercase tracking-widest text-white">
+      <Card className="p-5">
+        <div className="flex items-center gap-2 mb-4 border-b border-border pb-3">
+          {/* Simge nötr: başlık süsü, bir durum bildirmiyor. */}
+          <Activity className="text-muted w-4 h-4" />
+          <h2 className="text-body font-bold uppercase tracking-widest text-text">
             Ödeme İstatistikleri
           </h2>
         </div>
 
         {isError ? (
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest">
+          <p className="text-label text-dim uppercase tracking-widest">
             İstatistikler şu anda okunamıyor.
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-[9px] uppercase text-gray-500 tracking-widest mb-1">
+              <div className="text-label uppercase text-dim tracking-widest mb-1">
                 Toplam Ödeme
               </div>
-              <div className="text-2xl font-bold text-emerald-400">
+              {/* Rakamlar emerald: doğrudan tamamlanmış ödemeleri sayıyorlar. */}
+              <div className="text-display font-bold text-accent">
                 {isLoading ? '—' : data?.totalPayments ?? 0}
               </div>
             </div>
             <div>
-              <div className="text-[9px] uppercase text-gray-500 tracking-widest mb-1">
+              <div className="text-label uppercase text-dim tracking-widest mb-1">
                 Toplam Hacim
               </div>
-              <div className="text-2xl font-bold text-emerald-400">
+              <div className="text-display font-bold text-accent">
                 {isLoading ? '—' : `$${data?.totalVolumeUsd ?? '0.00'}`}
               </div>
             </div>
@@ -60,7 +63,7 @@ export default function StatsWidget() {
         {data && !data.persistent && (
           // Sayaçların nereden geldiği önemli: KV yoksa rakamlar yalnızca bu
           // sürecin ömrü boyunca birikir ve yanıltıcı görünebilir.
-          <p className="mt-4 text-[9px] text-gray-600 leading-relaxed">
+          <p className="mt-4 text-label text-dim leading-relaxed">
             Kalıcı depolama (Vercel KV) yapılandırılmamış — sayaçlar bellekte
             tutuluyor ve her yeniden başlatmada sıfırlanıyor.
           </p>
@@ -70,12 +73,12 @@ export default function StatsWidget() {
           href="https://base.dev/leaderboard"
           target="_blank"
           rel="noreferrer"
-          className="mt-4 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-500 hover:text-emerald-400 transition-colors"
+          className="mt-4 inline-flex items-center gap-1.5 text-label uppercase tracking-widest text-dim hover:text-text transition-colors"
         >
           Builder Code sıralaması
           <ExternalLink className="w-3 h-3" />
         </a>
-      </div>
+      </Card>
     </div>
   );
 }

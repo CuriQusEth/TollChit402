@@ -32,10 +32,10 @@ const Toast: FC<{ toast: ToastMessage; onDismiss: (id: number) => void }> = ({
   return (
     <div
       role="status"
-      className={`flex items-start gap-3 p-3 border shadow-lg backdrop-blur-md max-w-sm ${
+      className={`flex items-start gap-3 p-3 border rounded-sm shadow-lg backdrop-blur-md max-w-sm ${
         isSuccess
-          ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
-          : 'bg-red-950/80 border-red-500/40 text-red-300'
+          ? 'bg-accent-surface border-accent-border text-accent'
+          : 'bg-danger-surface border-danger-border text-danger'
       }`}
     >
       {isSuccess ? (
@@ -43,11 +43,11 @@ const Toast: FC<{ toast: ToastMessage; onDismiss: (id: number) => void }> = ({
       ) : (
         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
       )}
-      <p className="text-[11px] font-mono leading-relaxed flex-1">{toast.text}</p>
+      <p className="text-body leading-relaxed flex-1">{toast.text}</p>
       <button
         onClick={() => onDismiss(toast.id)}
         aria-label="Bildirimi kapat"
-        className="text-gray-500 hover:text-white transition-colors shrink-0"
+        className="text-dim hover:text-text transition-colors shrink-0"
       >
         <X className="w-3.5 h-3.5" />
       </button>
