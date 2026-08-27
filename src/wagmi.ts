@@ -12,7 +12,7 @@ export const config = createConfig({
     // isValidSignature'ına veriyor; akıllı cüzdan imzayı kendi sarmalayıcı
     // biçiminde ve replay-safe hash üzerinden beklediği için çağrı revert
     // ediyor ve ödeme invalid_exact_evm_payload_signature ile reddediliyor.
-    coinbaseWallet({ appName: 'x402-pay', preference: 'eoaOnly' })
+    coinbaseWallet({ appName: 'Toll402Pay', preference: 'eoaOnly' })
   ],
   transports: {
     [base.id]: http(),

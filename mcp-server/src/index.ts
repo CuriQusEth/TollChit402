@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * x402-pay MCP sunucusu.
+ * Toll402Pay MCP sunucusu.
  *
  * Bu proje bir x402 endpoint'i satar; burada onun *alıcı* tarafı bir MCP aracı
  * olarak sunuluyor. Claude gibi bir ajan aracı çağırdığında ödeme, aşağıdaki
@@ -24,6 +24,8 @@ import type { ClientEvmSigner } from "@x402/evm";
 
 config();
 
+// Gerçek dağıtım adresi; marka adı değişse de host aynı kaldığı için
+// dokunulmadı. Kendi dağıtımınız için RESOURCE_SERVER_URL ile geçersiz kılın.
 const DEFAULT_RESOURCE_URL = "https://x402-pay-iota.vercel.app/api/premium";
 
 /**
@@ -215,7 +217,7 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
   return { ...data, txHash };
 }
 
-const server = new McpServer({ name: "x402-pay", version: "1.0.0" });
+const server = new McpServer({ name: "toll402pay", version: "1.0.0" });
 
 server.tool(
   "get_premium_data",
@@ -267,5 +269,5 @@ await server.connect(transport);
 
 // stdout MCP protokolüne ait; her günlük satırı stderr'e gitmeli.
 console.error(
-  `x402-pay MCP sunucusu hazır — ödeyen ${account.address}, hedef ${resourceServerUrl}`
+  `Toll402Pay MCP sunucusu hazır — ödeyen ${account.address}, hedef ${resourceServerUrl}`
 );

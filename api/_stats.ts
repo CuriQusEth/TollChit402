@@ -8,6 +8,8 @@
  * paylaşılmaz.
  */
 
+// Marka Toll402Pay olarak değişti ama bu anahtarlar bilinçli olarak eski
+// adlarında bırakıldı: değiştirmek KV'de birikmiş sayaçları sıfırdan başlatırdı.
 const PAYMENTS_KEY = "x402-pay:stats:payments";
 const VOLUME_KEY = "x402-pay:stats:volume-atomic";
 

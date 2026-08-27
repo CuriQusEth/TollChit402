@@ -1,6 +1,6 @@
-# x402-pay MCP sunucusu
+# Toll402Pay MCP sunucusu
 
-Bu paket, x402-pay'in ücretli endpoint'ini bir **MCP aracı** olarak sunar. Claude
+Bu paket, Toll402Pay'in ücretli endpoint'ini bir **MCP aracı** olarak sunar. Claude
 gibi bir ajan aracı çağırdığında, 402 yanıtı otomatik karşılanır: ödeme
 yapılandırılmış cüzdandan imzalanır, CDP Facilitator doğrulayıp Base üzerinde
 settle eder ve endpoint'in JSON yanıtı ajana döner.
@@ -38,7 +38,7 @@ olarak çalıştığı için kendi `node_modules`'ü ile bağımsızdır.
 ```json
 {
   "mcpServers": {
-    "x402-pay": {
+    "toll402pay": {
       "command": "node",
       "args": ["/mutlak/yol/x402-Pay/mcp-server/dist/index.js"],
       "env": {
@@ -54,7 +54,7 @@ olarak çalıştığı için kendi `node_modules`'ü ile bağımsızdır.
 ## Claude Code
 
 ```bash
-claude mcp add x402-pay \
+claude mcp add toll402pay \
   --env EVM_PRIVATE_KEY=0x... \
   --env RESOURCE_SERVER_URL=https://x402-pay-iota.vercel.app/api/premium \
   -- node /mutlak/yol/x402-Pay/mcp-server/dist/index.js

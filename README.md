@@ -1,4 +1,4 @@
-# x402-Pay
+# Toll402Pay
 
 Base Mainnet üzerinde USDC ile x402 v2 mikro ödemeleri yapan bir demo. Uygulama
 hem **alıcı** hem **satıcı** tarafını içerir:
@@ -71,6 +71,44 @@ demosudur — gelir toplama yolu değil, çünkü ziyaretçi kendi cüzdanını
 yazabilir. Her ödemeyi tek bir cüzdana sabitlemek için
 `PAYMENT_RECIPIENT_ADDRESS` tanımlayın ve arayüzdeki alanı kaldırın.
 
+## Marka ve tasarım token'ları
+
+Logo bir otoyol gişe bariyeri: direk üstünde "402" yazan kontrol kutusu ve
+kalkmış — yani geçişe izin verilmiş — emerald bir kol. `public/brand/` altında
+işaret (`toll402pay-icon.svg`, aynı zamanda favicon), yatay kilit
+(`toll402pay-logo-wordmark.svg`) ve paylaşım önizlemesi (`toll402pay-og.png`)
+var. Başlıktaki logo `src/components/Logo.tsx` içindeki satır içi sürümdür:
+kelime markası gerçek metin olduğu için her sistemde aynı görünür ve rengini
+token'lardan alır.
+
+Bütün renkler `src/index.css`'teki `@theme` bloğundan gelir. Tailwind 4 bu
+değişkenleri hem `:root`'a CSS özel değişkeni olarak yazar hem de utility
+üretir, yani `bg-surface`, `border-border`, `text-muted` doğrudan kullanılabilir.
+
+| Token | Değer | Nerede |
+| --- | --- | --- |
+| `bg` | `#050505` | sayfa zemini |
+| `surface` | `#0a0a0a` | kartlar, paneller |
+| `surface-2` | `#141414` | yükseltilmiş yüzey |
+| `border` | `#1a1a1a` | varsayılan kenarlık |
+| `border-strong` | `#2a2a2a` | vurgulu kenarlık |
+| `text` / `muted` / `dim` | `#f5f5f5` / `#8b8f98` / `#6b7280` | metin kademeleri |
+| `accent` | `#10b981` | **yalnızca** ödendi / etkin / başarılı |
+| `danger` | `#f87171` | hata durumları |
+
+**Vurgu disiplini:** emerald tek imza rengi ve tek anlamı var — logodaki kalkmış
+kol gibi "geçişe izin verildi". Süs olarak kullanılmıyor. Bu yüzden ödeme
+panelinin kenarlığı, köşe işaretleri, kahraman başlığındaki kontur ve
+istatistik simgesi artık nötr; emerald yalnızca seçili pakette, ödeme düğmesinde,
+tamamlanan aşamalarda, başarı/makbuz kartlarında ve ağ durumu noktasında.
+
+Tipografi tek bir mono aile; ölçek dört basamak (`text-label` 10px,
+`text-body` 11px, `text-subhead` 14px, `text-display` 24px) artı sayfada tek
+kullanımı olan `text-hero`. Kart ve düğme görünümü `src/components/ui/`
+altındaki `Card` ve `Button` bileşenlerinde toplandı; global bir `.card` sınıfı
+yerine bileşen tercih edildi çünkü öyle bir sınıf Tailwind utility'leriyle
+özgüllük yarışına girebilirdi.
+
 ## Paketler
 
 | Paket | Yol | Şema | Fiyat |
@@ -115,7 +153,7 @@ Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişm
 
 ```json
 {
-  "service": "x402-pay",
+  "service": "toll402pay",
   "tier": "basic",
   "receipt": { "tokenId": "7", "txHash": "0x…", "contract": "0x…" }
 }
