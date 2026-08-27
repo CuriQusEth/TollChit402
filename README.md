@@ -87,6 +87,58 @@ tahsil eder. Talep edilen birim sayısı tavana kırpılır, çünkü yetkilendi
 Paket tablosu `shared/tiers.ts` içindedir; sunucu, tarayıcı ve agent card aynı
 kaynaktan okur.
 
+## Ödeme makbuzu NFT'si
+
+Başarılı her settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir ERC-721
+makbuz basılır (`contracts/PaymentReceipt.sol`). Makbuz ödemenin zincir üstü
+kanıtıdır; metadata ve görsel tamamen zincir üstündedir (base64 `data:` URI,
+satır içi SVG), yani IPFS ya da Pinata gibi bir dış barındırıcıya bağlı değildir.
+
+Basım, sayaçla aynı ortak noktada — `api/_premium.ts`'teki tek `onAfterSettle`
+kancasında — duruyor. Paketten bağımsızdır: `shared/tiers.ts`'e eklenen yeni bir
+paket hiçbir kod değişikliği olmadan makbuz kazanır.
+
+**Alıcının ödemesi gazsızdır, basım değildir.** Alıcı EIP-3009 ile yalnızca imza
+atar ve gazı facilitator öder. Makbuz basımı ise gerçek bir zincir üstü yazma
+işlemidir ve gazını **proje** öder. `RECEIPT_MINTER_PRIVATE_KEY` cüzdanında Base
+ağında küçük bir ETH bakiyesi bulunmalı ve elle doldurulmalıdır.
+
+Basım hiçbir koşulda ödemeyi etkilemez:
+
+- Ödeme başarısızsa (settlement `success:false`) basım hiç denenmez.
+- Basım başarısız olursa (gaz bitti, RPC düştü, kontrat revert etti) hata
+  yutulur, günlüğe yazılır ve alıcı normal başarılı yanıtını alır.
+- Basım `RECEIPT_MINT_WAIT_MS` (varsayılan 4000 ms) içinde bitmezse alıcı
+  beklemez: yanıt makbuzsuz gider, basım arka planda tamamlanır.
+
+Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişmez:
+
+```json
+{
+  "service": "x402-pay",
+  "tier": "basic",
+  "receipt": { "tokenId": "7", "txHash": "0x…", "contract": "0x…" }
+}
+```
+
+Makbuz özelliği yapılandırılmamışsa alan hiç eklenmez; basım yetişmediyse `null`
+olur. Arayüz ikisinde de sessiz kalır — ödemenin kendisi başarılıdır.
+
+### Dağıtım
+
+Kontrat bir kez, elle dağıtılır:
+
+```bash
+npm run deploy:receipt
+```
+
+Betik `solc-js` ile derler ve viem'in `deployContract`'ıyla Base mainnet'e
+gönderir (projeye Foundry ya da Hardhat eklenmiyor). Çıkan adresi
+`RECEIPT_CONTRACT_ADDRESS` olarak tanımlayın. Dağıtan cüzdan kontratın sahibi
+olur ve makbuzları yalnızca o basabilir — basım herkese açık olsaydı, ödeme
+yapmamış biri kendine sınırsız sahte makbuz basabilir ve makbuzun kanıt değeri
+kalmazdı.
+
 ## İstatistikler
 
 `GET /api/stats`, toplam ödeme sayısını ve USDC hacmini döner. Vercel KV

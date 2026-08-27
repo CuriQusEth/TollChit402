@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
-import { Loader2, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Ticket } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from '@x402/fetch';
 import type { ClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
@@ -32,6 +32,18 @@ const STEP_LABELS: Record<Exclude<PaymentStep, 'idle'>, string> = {
 };
 
 const STEP_ORDER: PaymentStep[] = ['signing', 'verifying', 'settling', 'done'];
+
+/**
+ * Ödemeden sonra basılan makbuz NFT'si.
+ *
+ * Sunucu bu alanı yalnızca makbuz özelliği açıkken yanıta ekler ve basım
+ * yapılamadıysa `null` gönderir; arayüz ikisini de sessizce karşılar.
+ */
+type Receipt = {
+  tokenId: string;
+  txHash: string;
+  contract: string;
+};
 
 /**
  * Some wallets return the EIP-712 recovery byte (`v`) as 0x00/0x01 rather than
@@ -102,6 +114,7 @@ export default function PaymentForm() {
   const [recipient, setRecipient] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<PaymentStep>('idle');
   // Hata anında hangi aşamada kalındığını göstermek için; 'error' bunu kaybeder.
@@ -163,6 +176,7 @@ export default function PaymentForm() {
     setIsPaying(true);
     setError(null);
     setTxHash(null);
+    setReceipt(null);
     setStep('signing');
     setFailedAt('signing');
 
@@ -346,6 +360,16 @@ export default function PaymentForm() {
         }
       } catch (e) {
         console.warn('Settlement başlığı çözülemedi', e);
+      }
+
+      // Makbuz, ödemenin yanıt gövdesinde gelir (bkz. api/_receipt-response.ts).
+      // Özellik kapalıysa alan hiç yoktur, basım yetişmediyse null gelir —
+      // ikisinde de kart gösterilmez, çünkü ödemenin kendisi başarılı.
+      try {
+        const body = (await response.json()) as { receipt?: Receipt | null };
+        if (body?.receipt?.tokenId) setReceipt(body.receipt);
+      } catch (e) {
+        console.warn('Yanıt gövdesi okunamadı', e);
       }
 
       setTxHash(finalTxHash);
@@ -538,6 +562,27 @@ export default function PaymentForm() {
             </a>
           </div>
           <div className="font-mono text-[10px] text-gray-400 break-all">{txHash}</div>
+        </div>
+      )}
+
+      {receipt && (
+        <div className="mt-6 bg-emerald-900/10 border border-emerald-500/20 p-4 shadow-[0_0_30px_rgba(16,185,129,0.05)]">
+          <div className="flex justify-between text-[11px] mb-2">
+            <span className="text-emerald-400 font-bold uppercase flex items-center gap-1.5">
+              <Ticket className="w-3.5 h-3.5" /> Receipt Minted 🎫
+            </span>
+            <a
+              href={`https://basescan.org/nft/${receipt.contract}/${receipt.tokenId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-gray-500 hover:text-white transition-colors"
+            >
+              View on Basescan ↗
+            </a>
+          </div>
+          <div className="font-mono text-[10px] text-gray-400">
+            Makbuz #{receipt.tokenId} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.
+          </div>
         </div>
       )}
 

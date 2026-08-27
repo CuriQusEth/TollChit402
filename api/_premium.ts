@@ -16,6 +16,12 @@ import {
 } from "@x402/extensions";
 import { TIERS, type Tier } from "../shared/tiers.js";
 import { readStats, recordPayment } from "./_stats.js";
+import { mintReceipt, receiptContractAddress } from "./_receipt.js";
+import {
+  currentReceiptSlot,
+  withReceiptSlot,
+  type ReceiptField,
+} from "./_receipt-response.js";
 import {
   createCdpFacilitatorClient,
   MissingConfigError,
@@ -35,6 +41,24 @@ const METERED_UNIT_ATOMIC = 5000; // 0.005 USDC
 
 /** Tavanı aşmamak için izin verilen en yüksek birim sayısı. */
 const METERED_MAX_UNITS = 100; // 100 * 0.005 = 0.50 USDC
+
+/**
+ * Alıcının yanıtı beklerken makbuza tanınan süre.
+ *
+ * Basım gerçek bir zincir üstü yazma; Base'de blok süresi ~2 saniye olduğu için
+ * makbuz çoğu zaman bu pencereye sığar ve yanıtın gövdesinde döner. Sığmazsa
+ * alıcı beklemez: yanıt makbuzsuz gider, basım arka planda tamamlanır.
+ * RECEIPT_MINT_WAIT_MS ile ayarlanabilir; 0 verilirse hiç beklenmez.
+ */
+const RECEIPT_WAIT_MS = (() => {
+  const configured = Number(process.env.RECEIPT_MINT_WAIT_MS);
+  return Number.isFinite(configured) && configured >= 0 ? configured : 4000;
+})();
+
+/** USDC 6 haneli; atomik birimi makbuza yazılacak dolar tutarına çevirir. */
+function atomicToUsd(atomic: number): string {
+  return (atomic / 1_000_000).toFixed(4);
+}
 
 /** A2A agent discovery document. */
 export const AGENT_CARD_ROUTE = "/.well-known/agent-card.json";
@@ -264,6 +288,104 @@ function agentCard(origin: string) {
 }
 
 /**
+ * Ödemeyi yapan cüzdanın adresi.
+ *
+ * Facilitator bunu settlement yanıtında bildirir; bildirmezse imzalı yükten
+ * okunur. `exact` şeması EIP-3009 `authorization`, `upto` ise Permit2
+ * `permit2Authorization` taşır — ikisinde de ödeyen `from` alanındadır.
+ */
+function payerAddress(context: {
+  result: { payer?: string };
+  paymentPayload: { payload?: unknown };
+}): string | null {
+  const candidates = [
+    context.result.payer,
+    (context.paymentPayload.payload as { authorization?: { from?: string } })
+      ?.authorization?.from,
+    (
+      context.paymentPayload.payload as {
+        permit2Authorization?: { from?: string };
+      }
+    )?.permit2Authorization?.from,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && EVM_ADDRESS.test(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Ödemeyi yapana makbuz basar ve sonucu bu isteğin yanıt gövdesine iliştirir.
+ *
+ * Bilerek paketten bağımsız: settlement'tan sonra her paketin geçtiği tek ortak
+ * noktada duruyor, dolayısıyla shared/tiers.ts'e eklenen yeni bir paket hiçbir
+ * kod değişikliği olmadan makbuz kazanır.
+ *
+ * Basım alıcıyı bekletmez: kısa bir süreyle yarıştırılır, süre dolarsa yanıt
+ * makbuzsuz gider ve basım arka planda tamamlanır. Basım başarısız olsa bile
+ * ödeme etkilenmez — mintReceipt hiçbir koşulda fırlatmaz.
+ */
+async function attachReceipt(
+  context: {
+    result: { payer?: string; network: string };
+    paymentPayload: { payload?: unknown };
+  },
+  amountAtomic: number
+): Promise<void> {
+  const slot = currentReceiptSlot();
+  // Yuva yoksa istek ödeme kapısından geçmemiş demektir; olmaması bir hata.
+  if (!slot) return;
+
+  const contract = receiptContractAddress();
+  // Makbuz özelliği yapılandırılmamış: yanıt şekli hiç değişmesin.
+  if (!contract) return;
+
+  const to = payerAddress(context);
+  if (!to) {
+    console.warn("[receipt] Ödeyen adres bulunamadı; basım atlandı.");
+    slot.receipt = null;
+    return;
+  }
+
+  const mint = mintReceipt({
+    to,
+    tierId: slot.tierId,
+    amountUsd: atomicToUsd(amountAtomic),
+    network: context.result.network,
+  }).catch((err) => {
+    // mintReceipt zaten yutuyor; bu yalnızca beklenmeyen bir durum için ağ.
+    console.error("[receipt] Basım beklenmedik şekilde fırlattı:", err);
+    return null;
+  });
+
+  if (RECEIPT_WAIT_MS === 0) {
+    slot.receipt = null;
+    return;
+  }
+
+  // Yarış: hangisi önce biterse. Zaman aşımı kazanırsa basım arka planda
+  // sürer ve sonucunu kendi günlüğüne yazar.
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), RECEIPT_WAIT_MS);
+  });
+
+  const minted = await Promise.race([mint, deadline]);
+  clearTimeout(timer);
+
+  const field: ReceiptField = minted ? { ...minted, contract } : null;
+  if (!minted) {
+    console.warn(
+      `[receipt] Basım ${RECEIPT_WAIT_MS} ms içinde bitmedi; yanıt makbuzsuz gidiyor.`
+    );
+  }
+  slot.receipt = field;
+}
+
+/**
  * Builds the router that serves the paid endpoint.
  *
  * Both the local Express server and the Vercel function mount this same router,
@@ -317,16 +439,21 @@ export function createPremiumRouter(): Router {
           .onAfterSettle(async (context) => {
             // Kanca, facilitator hata FIRLATMADAN {success:false} döndüğünde de
             // çalışır. O durumda para hareket etmez ve istemci hata alır, yani
-            // sayılmamalı.
+            // ne sayılmalı ne de makbuz basılmalı.
             if (!context.result.success) return;
 
+            // Tek bir tutar, iki tüketici: sayaç ve makbuz aynı rakamı görsün.
+            const amountAtomic = Number(context.requirements.amount);
+
             try {
-              await recordPayment(Number(context.requirements.amount));
+              await recordPayment(amountAtomic);
             } catch (err) {
               // Sayaç ödeme akışını asla bozmamalı: ödeme çoktan zincire
               // yazıldı, burada fırlatmak onu geri almaz.
               console.error("[stats] Ödeme sayılamadı:", err);
             }
+
+            await attachReceipt(context, amountAtomic);
           });
 
         // Payment requirements cannot be built until the facilitator has
@@ -368,9 +495,16 @@ export function createPremiumRouter(): Router {
       return;
     }
 
+    // Ödeme hattı bir makbuz yuvası bağlamında çalışıyor: settlement kancası
+    // hangi paket için çalıştığını ve sonucu nereye yazacağını böyle biliyor.
+    // Paket burada çözülüyor çünkü PaymentRequirements rota bilgisi taşımıyor.
+    const tier = TIERS.find((t) => t.route === req.path);
+
     // Express 4 does not forward a rejected promise to the error handler, so the
     // rejection is routed explicitly.
-    return Promise.resolve(paid(req, res, next)).catch(next);
+    return withReceiptSlot(tier?.id ?? "unknown", res, () =>
+      Promise.resolve(paid(req, res, next)).catch(next)
+    );
   });
 
   for (const tier of TIERS) {

@@ -188,6 +188,10 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
     );
   }
 
+  // Yanıt gövdesi aynen aktarılıyor. Makbuz NFT'si de bu gövdede `receipt`
+  // alanı olarak gelir (sunucuda api/_receipt-response.ts ekliyor), dolayısıyla
+  // ajan hiçbir ek işlem yapmadan makbuzunun tokenId/txHash bilgisini görür.
+  // Makbuz özelliği kapalıysa alan hiç bulunmaz, basım yetişmediyse null olur.
   const data = (await response.json()) as Record<string, unknown>;
 
   // Settlement bilgisi PAYMENT-RESPONSE başlığından gelir. @x402/extensions'ın
@@ -218,7 +222,10 @@ server.tool(
   "x402 ile korunan premium endpoint'ten veri getirir. Her çağrı Base " +
     "mainnet üzerinde seçilen pakete göre bir USDC ödemesi yapar; ödeme yapılandırılmış " +
     "cüzdandan otomatik olarak çekilir ve insan onayı istenmez. Endpoint'in JSON " +
-    "yanıtını ve settlement işleminin hash'ini döndürür.",
+    "yanıtını ve settlement işleminin hash'ini (txHash) döndürür. Sunucuda makbuz " +
+    "özelliği açıksa yanıtta ayrıca `receipt` alanı bulunur: ödeyen cüzdana basılan " +
+    "ERC-721 makbuzun tokenId, txHash ve kontrat adresi. Basım yetişmediyse `receipt` " +
+    "null olur — bu ödemenin başarısız olduğu anlamına GELMEZ, ödeme yine tamamlanmıştır.",
   {
     recipient: z
       .string()
