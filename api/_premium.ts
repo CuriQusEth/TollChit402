@@ -17,6 +17,7 @@ import {
 import { TIERS, type Tier } from "../shared/tiers.js";
 import { readStats, recordPayment } from "./_stats.js";
 import { mintReceipt, receiptContractAddress } from "./_receipt.js";
+import { diagnoseReceiptMinting } from "./_receipt-doctor.js";
 import {
   currentReceiptSlot,
   withReceiptSlot,
@@ -65,6 +66,16 @@ export const AGENT_CARD_ROUTE = "/.well-known/agent-card.json";
 
 /** Read-only payment counters. */
 export const STATS_ROUTE = "/api/stats";
+
+/**
+ * Bilet basımı teşhisi.
+ *
+ * Basım hataları alıcıya sızmıyor ve yalnızca sunucu loglarına yazılıyor;
+ * dağıtılmış bir ortamda oraya bakmak zor olduğu için sebebi bir URL'den
+ * okunabilir kılıyor. Yalnızca herkese açık zincir verisi döner — private key
+ * hiçbir çıktıya girmez.
+ */
+export const RECEIPT_STATUS_ROUTE = "/api/receipt-status";
 
 /** Base mainnet, CAIP-2. The CDP facilitator settles `exact` payments here. */
 export const BASE_NETWORK: Network = "eip155:8453";
@@ -542,6 +553,23 @@ export function createPremiumRouter(): Router {
 
   router.get(STATS_ROUTE, async (_req, res) => {
     res.json(await readStats());
+  });
+
+  router.get(RECEIPT_STATUS_ROUTE, async (_req, res) => {
+    // Zincir sorgusu içerir; önbelleğe alınmamalı.
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const diagnosis = await diagnoseReceiptMinting();
+      // Bir kontrol başarısızsa 200 yerine 503: izleme araçları da görsün.
+      res.status(diagnosis.ok ? 200 : 503).json(diagnosis);
+    } catch (err) {
+      console.error("[receipt] Teşhis çalıştırılamadı:", err);
+      res.status(500).json({
+        ok: false,
+        error: "diagnosis_failed",
+        message: (err as Error).message,
+      });
+    }
   });
 
   router.get(AGENT_CARD_ROUTE, (req, res) => {

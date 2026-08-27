@@ -5,6 +5,10 @@
       "destination": "/api/premium"
     },
     {
+      "source": "/api/receipt-status",
+      "destination": "/api/premium"
+    },
+    {
       "source": "/api/stats",
       "destination": "/api/premium"
     },

@@ -362,6 +362,51 @@ function tokenIdFromLogs(logs: readonly unknown[]): string | null {
 }
 
 /**
+ * Gönderilmiş bir basımın sonucunu arka planda doğrular ve günlüğe yazar.
+ *
+ * Yanıt bunu beklemiyor; amacı, bir şey ters gittiğinde loglarda iz bırakmak.
+ */
+async function confirmMint(
+  waitForReceipt: () => Promise<{ status: string; logs: readonly unknown[] }>,
+  txHash: `0x${string}`,
+  reservedId: bigint
+): Promise<void> {
+  try {
+    const receipt = await waitForReceipt();
+
+    if (receipt.status !== "success") {
+      // Numara ayrıldı ama kullanılmadı; sayaç zincirden yeniden okunmalı.
+      resyncChitId();
+      console.warn(`[receipt] Basım işlemi revert etti: ${txHash}`);
+      return;
+    }
+
+    const tokenId = tokenIdFromLogs(receipt.logs);
+    if (!tokenId) {
+      console.warn(`[receipt] ChitMinted olayı okunamadı: ${txHash}`);
+      return;
+    }
+
+    // Ayrılan numara tutmadıysa sayaç kaymış demektir (aynı cüzdanla basan
+    // ikinci bir süreç). Kontratta setTokenURI olmadığı için o biletin
+    // görselindeki numara düzeltilemez; yapılabilecek tek şey sayacı zincirden
+    // yeniden okumak ki sonraki biletler doğru olsun.
+    if (tokenId !== reservedId.toString()) {
+      console.error(
+        `[receipt] Seri numarası kaydı: ayrılan #${reservedId}, verilen #${tokenId}. ` +
+          "Bu biletin görselindeki numara yanlış; sayaç zincirden yeniden okunacak."
+      );
+      resyncChitId();
+      return;
+    }
+
+    console.log(`[receipt] Bilet #${tokenId} onaylandı (${txHash})`);
+  } catch (err) {
+    console.error(`[receipt] Basım onayı okunamadı (${txHash}):`, err);
+  }
+}
+
+/**
  * Ödemeyi yapana bir TollChit402 bileti basar.
  *
  * @returns Basılan bilet, ya da basım yapılamadıysa `null`. Bu fonksiyon
@@ -403,6 +448,20 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     );
     const uri = buildTokenUri(params, mintedAt, reservedId);
 
+    // Göndermeden ÖNCE simüle et. İki kazancı var:
+    //   - Kontrat çağrıyı reddedecekse (onlyOwner, yanlış adres, ABI uyumsuz)
+    //     sebebi burada okunabilir bir hata olarak öğreniliyor; aksi hâlde
+    //     gaz harcanıp zincirde revert eden bir işlemle öğrenilirdi.
+    //   - Boşa gaz harcanmıyor.
+    await publicClient.simulateContract({
+      address: config.contract,
+      abi: TOLLCHIT_ABI,
+      functionName: "mint",
+      args: [params.to as `0x${string}`, uri],
+      account,
+      authorizationList: undefined,
+    });
+
     const txHash = await walletClient.writeContract({
       address: config.contract,
       abi: TOLLCHIT_ABI,
@@ -416,40 +475,27 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
       kzg: undefined,
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({
-      hash: txHash,
-      timeout: MINT_DEADLINE_MS,
-    });
+    // Blok onayı BEKLENMİYOR. Sebep: bu fonksiyon ödemenin yanıtını bekleten
+    // yolun içinde. Base'de blok ~2 sn ve bunun üstüne 5 RPC turu biniyor;
+    // onayı beklemek bütçeyi düzenli olarak aşıyor ve bilet yanıta hiç
+    // yetişmiyordu. Üstelik serverless ortamda yanıt gittikten sonra süreç
+    // donduruluyor, yani "arka planda tamamlanır" varsayımı da tutmuyor.
+    //
+    // Bilet kimliği zaten ayrıldı ve simülasyon çağrının geçerli olduğunu
+    // kanıtladı, dolayısıyla gönderim yeterli. Onay arka planda doğrulanıp
+    // günlüğe yazılıyor.
+    console.log(`[receipt] Bilet #${reservedId} gönderildi → ${params.to} (${txHash})`);
+    void confirmMint(
+      () =>
+        publicClient.waitForTransactionReceipt({
+          hash: txHash,
+          timeout: MINT_DEADLINE_MS,
+        }),
+      txHash,
+      reservedId
+    );
 
-    if (receipt.status !== "success") {
-      // Numara ayrıldı ama kullanılmadı; sayaç zincirden yeniden okunmalı.
-      resyncChitId();
-      console.warn(`[receipt] Basım işlemi revert etti: ${txHash}`);
-      return null;
-    }
-
-    const tokenId = tokenIdFromLogs(receipt.logs);
-    if (!tokenId) {
-      // İşlem başarılı ama olay okunamadı: makbuz basıldı, kimliği bilinmiyor.
-      // Yanıta eksik bir kayıt koymaktansa hiç koymamak daha doğru.
-      console.warn(`[receipt] ChitMinted olayı okunamadı: ${txHash}`);
-      return null;
-    }
-
-    // Ayrılan numara tutmadıysa sayaç kaymış demektir (aynı cüzdanla basan
-    // ikinci bir süreç). Kontratta setTokenURI olmadığı için o biletin
-    // görselindeki numara düzeltilemez; yapılabilecek tek şey sayacı zincirden
-    // yeniden okumak ki sonraki biletler doğru olsun.
-    if (tokenId !== reservedId.toString()) {
-      console.error(
-        `[receipt] Seri numarası kaydı: ayrılan #${reservedId}, verilen #${tokenId}. ` +
-          "Bu biletin görselindeki numara yanlış; sayaç zincirden yeniden okunacak."
-      );
-      resyncChitId();
-    }
-
-    console.log(`[receipt] Bilet #${tokenId} basıldı → ${params.to} (${txHash})`);
-    return { tokenId, txHash };
+    return { tokenId: reservedId.toString(), txHash };
   } catch (err) {
     // Gaz bitmiş, RPC düşmüş, alıcı ERC-721 kabul etmeyen bir kontrat olabilir.
     // Hiçbiri ödemeyi ilgilendirmez: ödeme çoktan zincire yazıldı.
