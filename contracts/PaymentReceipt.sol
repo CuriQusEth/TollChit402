@@ -67,6 +67,30 @@ contract PaymentReceipt is ERC721, ERC721URIStorage, Ownable {
         return _nextTokenId;
     }
 
+    /**
+     * @notice Bir sonraki makbuzun alacağı kimlik.
+     * @dev Sunucu, bileti basmadan önce üzerine yazacağı seri numarasını
+     * buradan öğrenir. Görselin içinde seri numarası olduğu ve numara ancak
+     * mint sırasında belli olduğu için, tokenURI'nin doğru numarayla
+     * üretilebilmesi gerekiyor.
+     */
+    function nextTokenId() external view returns (uint256) {
+        return _nextTokenId + 1;
+    }
+
+    /**
+     * @notice Var olan bir makbuzun URI'sini değiştirir.
+     * @dev Yalnızca sahip çağırabilir ve tek bir amacı var: eşzamanlı iki
+     * basım araya girip biletin üzerine yanlış seri numarası yazdıysa onu
+     * düzeltmek (bkz. api/_receipt.ts). Kalıcı bir ödeme kanıtının üzerinde
+     * yanlış numara durmasındansa düzeltilebilir olması yeğdir.
+     */
+    function setTokenURI(uint256 tokenId, string memory uri) external onlyOwner {
+        // _requireOwned, var olmayan bir token için revert eder.
+        _requireOwned(tokenId);
+        _setTokenURI(tokenId, uri);
+    }
+
     // --- Çoklu kalıtım için gereken override'lar ---
 
     function tokenURI(

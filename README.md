@@ -128,9 +128,23 @@ kaynaktan okur.
 ## Ödeme makbuzu NFT'si
 
 Başarılı her settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir ERC-721
-makbuz basılır (`contracts/PaymentReceipt.sol`). Makbuz ödemenin zincir üstü
+bilet basılır (`contracts/PaymentReceipt.sol`). Bilet ödemenin zincir üstü
 kanıtıdır; metadata ve görsel tamamen zincir üstündedir (base64 `data:` URI,
 satır içi SVG), yani IPFS ya da Pinata gibi bir dış barındırıcıya bağlı değildir.
+
+**Konsept — klasik makbuz.** Bilet yırtılan bir gişe fişi biçiminde: solda
+perforasyonla ayrılmış koçanda mini bariyer ve "ADMIT ONE", sağda "TOLLCHIT",
+emerald çerçeveli "X402" rozeti, tutar ve seri numarası. Her ödeme tek seferlik
+bir geçiş hakkı; `tokenId` doğrudan seri numarasıdır (`NO. 000042`), yani ilk
+biletler doğal olarak düşük numaralı olur.
+
+Seri numarası görselin *içinde* durduğu için basımdan önce bilinmesi gerekiyor,
+ama kimliği kontrat mint sırasında veriyor. Akış bu yüzden şöyle: `nextTokenId()`
+okunur → bilet o numarayla üretilir → basılır → olaydan gelen gerçek kimlikle
+karşılaştırılır. Eşzamanlı iki basım araya girip tahmini bozarsa sunucu arka
+planda `setTokenURI` ile bileti doğru numarayla yeniden yazar — kalıcı bir ödeme
+kanıtının üzerinde yanlış numara durmasındansa düzeltilmesi yeğdir. Bu yol
+alıcıyı bekletmez ve ödemeyi hiç ilgilendirmez.
 
 Basım, sayaçla aynı ortak noktada — `api/_premium.ts`'teki tek `onAfterSettle`
 kancasında — duruyor. Paketten bağımsızdır: `shared/tiers.ts`'e eklenen yeni bir

@@ -51,6 +51,23 @@ const RECEIPT_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
+    type: "function",
+    name: "nextTokenId",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "setTokenURI",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "uri", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "ReceiptMinted",
     inputs: [
@@ -138,38 +155,101 @@ function toBase64(value: string): string {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
+/** Seri numarasını "000007" biçiminde altı haneye tamamlar. */
+function serialOf(tokenId: bigint): string {
+  return tokenId.toString().padStart(6, "0");
+}
+
 /**
- * Makbuzun görselini üretir.
+ * Makbuzun görselini üretir: yırtılan bir bilet koçanı.
  *
- * Tamamen zincir üstünde durabilmesi için satır içi SVG: IPFS ya da Pinata gibi
- * bir dış barındırıcıya bağımlılık yok, dolayısıyla makbuz o servis kapansa da
- * görüntülenebilir kalır.
+ * Solda perforasyonla ayrılmış koçan (mini bariyer + ADMIT ONE), sağda ana
+ * bilet (TOLLCHIT + X402 rozeti + tutar + seri numarası). Biçim konsepti
+ * anlatıyor: her ödeme tek seferlik bir geçiş hakkı, seri numarası da o
+ * geçişin sırası.
+ *
+ * Tamamen zincir üstünde durabilmesi için satır içi SVG: IPFS ya da Pinata
+ * gibi bir dış barındırıcıya bağımlılık yok, dolayısıyla makbuz o servis
+ * kapansa da görüntülenebilir kalır.
  */
-function receiptSvg(params: ReceiptParams, mintedAt: Date): string {
+function receiptSvg(
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint
+): string {
   const tier = escapeXml(params.tierId.toUpperCase());
   const amount = escapeXml(params.amountUsd);
   const network = escapeXml(params.network);
   const date = escapeXml(mintedAt.toISOString().slice(0, 19).replace("T", " "));
   const payer = escapeXml(`${params.to.slice(0, 6)}…${params.to.slice(-4)}`);
+  const serial = serialOf(tokenId);
 
-  // Arayüzdeki terminal/mono/emerald dili.
+  // Arayüzdeki token'ların birebir aynısı (src/index.css).
+  const BG = "#050505";
+  const SURFACE = "#0a0a0a";
+  const BORDER = "#2a2a2a";
+  const TEXT = "#f5f5f5";
+  const MUTED = "#8b8f98";
+  const DIM = "#6b7280";
+  const ACCENT = "#10b981";
+
+  const MONO = "ui-monospace,SFMono-Regular,Menlo,monospace";
+  const STUB_X = 168; // perforasyon çizgisinin yeri
+
   return [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">',
-    '<rect width="480" height="480" fill="#050505"/>',
-    '<rect x="16" y="16" width="448" height="448" fill="none" stroke="#10b981" stroke-width="2"/>',
-    '<g font-family="ui-monospace,SFMono-Regular,Menlo,monospace">',
-    '<text x="40" y="72" fill="#10b981" font-size="13" letter-spacing="4">X402 PAYMENT RECEIPT</text>',
-    `<text x="40" y="176" fill="#ffffff" font-size="64" font-weight="bold">$${amount}</text>`,
-    '<line x1="40" y1="212" x2="440" y2="212" stroke="#222"/>',
-    '<text x="40" y="256" fill="#6b7280" font-size="11" letter-spacing="3">TIER</text>',
-    `<text x="200" y="256" fill="#d1d5db" font-size="11">${tier}</text>`,
-    '<text x="40" y="292" fill="#6b7280" font-size="11" letter-spacing="3">NETWORK</text>',
-    `<text x="200" y="292" fill="#d1d5db" font-size="11">${network}</text>`,
-    '<text x="40" y="328" fill="#6b7280" font-size="11" letter-spacing="3">PAYER</text>',
-    `<text x="200" y="328" fill="#d1d5db" font-size="11">${payer}</text>`,
-    '<text x="40" y="364" fill="#6b7280" font-size="11" letter-spacing="3">PAID AT</text>',
-    `<text x="200" y="364" fill="#d1d5db" font-size="11">${date} UTC</text>`,
-    '<text x="40" y="432" fill="#374151" font-size="10" letter-spacing="2">PROOF OF PAYMENT — BASE MAINNET</text>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="260" viewBox="0 0 640 260">',
+    `<rect width="640" height="260" fill="${BG}"/>`,
+
+    // Bilet gövdesi
+    `<rect x="16" y="16" width="608" height="228" rx="8" fill="${SURFACE}" stroke="${BORDER}" stroke-width="2"/>`,
+
+    // Perforasyon: üst ve alt yarım daire çentikler + kesik çizgi
+    `<circle cx="${STUB_X}" cy="16" r="11" fill="${BG}"/>`,
+    `<circle cx="${STUB_X}" cy="244" r="11" fill="${BG}"/>`,
+    `<path d="M${STUB_X} 34V226" stroke="${BORDER}" stroke-width="2" stroke-dasharray="6 7" stroke-linecap="round"/>`,
+
+    `<g font-family="${MONO}">`,
+
+    // --- KOÇAN ---
+    // Mini bariyer: kol kalkmış, geçiş verilmiş
+    `<g transform="translate(58 74) scale(0.78)">`,
+    `<path d="M0 44h56" stroke="${BORDER}" stroke-width="2.5" stroke-linecap="round"/>`,
+    `<g transform="rotate(-38 10 28)">`,
+    `<rect x="10" y="24" width="40" height="9" rx="2" fill="${ACCENT}"/>`,
+    `<path d="M20 24v9M30 24v9M40 24v9" stroke="${SURFACE}" stroke-width="3"/>`,
+    "</g>",
+    `<circle cx="10" cy="28" r="3.2" fill="${SURFACE}" stroke="${ACCENT}" stroke-width="2"/>`,
+    `<rect x="2" y="8" width="17" height="13" rx="2" fill="${SURFACE}" stroke="${BORDER}" stroke-width="1.5"/>`,
+    `<text x="10.5" y="18" font-size="8" font-weight="700" fill="${TEXT}" text-anchor="middle">402</text>`,
+    `<rect x="7" y="21" width="6" height="23" fill="${BG}" stroke="${BORDER}" stroke-width="1.5"/>`,
+    "</g>",
+    `<path d="M52 148h80" stroke="${BORDER}" stroke-width="1"/>`,
+    `<text x="92" y="176" font-size="13" font-weight="700" fill="${MUTED}" text-anchor="middle" letter-spacing="3">ADMIT ONE</text>`,
+    `<text x="92" y="198" font-size="10" fill="${DIM}" text-anchor="middle" letter-spacing="2">NO. ${serial}</text>`,
+
+    // --- ANA BİLET ---
+    `<text x="200" y="70" font-size="30" font-weight="700" fill="${TEXT}" letter-spacing="1">TOLLCHIT</text>`,
+
+    // X402 rozeti — emerald çerçeve
+    `<rect x="516" y="44" width="76" height="32" rx="4" fill="none" stroke="${ACCENT}" stroke-width="2"/>`,
+    `<text x="554" y="66" font-size="16" font-weight="700" fill="${ACCENT}" text-anchor="middle" letter-spacing="2">X402</text>`,
+
+    `<path d="M200 92h392" stroke="${BORDER}" stroke-width="1"/>`,
+
+    // Tutar
+    `<text x="200" y="146" font-size="46" font-weight="700" fill="${TEXT}">$${amount}</text>`,
+
+    // Alan satırı
+    `<text x="200" y="186" font-size="9" fill="${DIM}" letter-spacing="2">TIER</text>`,
+    `<text x="200" y="204" font-size="11" fill="${MUTED}">${tier}</text>`,
+    `<text x="330" y="186" font-size="9" fill="${DIM}" letter-spacing="2">NETWORK</text>`,
+    `<text x="330" y="204" font-size="11" fill="${MUTED}">${network}</text>`,
+    `<text x="470" y="186" font-size="9" fill="${DIM}" letter-spacing="2">PAYER</text>`,
+    `<text x="470" y="204" font-size="11" fill="${MUTED}">${payer}</text>`,
+
+    `<text x="200" y="228" font-size="9" fill="${DIM}" letter-spacing="2">${date} UTC</text>`,
+    `<text x="592" y="228" font-size="11" font-weight="700" fill="${MUTED}" text-anchor="end" letter-spacing="2">NO. ${serial}</text>`,
+
     "</g>",
     "</svg>",
   ].join("");
@@ -178,21 +258,31 @@ function receiptSvg(params: ReceiptParams, mintedAt: Date): string {
 /**
  * Tamamen zincir üstü tokenURI'yi üretir.
  *
- * Kontrat paketlerden habersizdir; paket, tutar, ağ ve zaman damgası burada
- * metadata'nın `attributes` alanına konur, böylece yeni bir paket eklemek
- * kontratı değiştirmeyi gerektirmez.
+ * Kontrat paketlerden habersizdir; paket, tutar, ağ, seri numarası ve zaman
+ * damgası burada metadata'nın `attributes` alanına konur, böylece yeni bir
+ * paket eklemek kontratı değiştirmeyi gerektirmez.
+ *
+ * @param tokenId Bilete yazılacak seri numarası. Basımdan ÖNCE bilinmesi
+ *   gerekiyor çünkü görselin içinde duruyor; çağıran taraf bunu kontrattan
+ *   `nextTokenId()` ile okur ve basımdan sonra doğrular.
  */
-export function buildTokenUri(params: ReceiptParams, mintedAt: Date): string {
-  const image = `data:image/svg+xml;base64,${toBase64(receiptSvg(params, mintedAt))}`;
+export function buildTokenUri(
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint
+): string {
+  const image = `data:image/svg+xml;base64,${toBase64(receiptSvg(params, mintedAt, tokenId))}`;
 
   const metadata = {
-    name: `x402 Payment Receipt — ${params.tierId} ($${params.amountUsd})`,
+    name: `TOLLCHIT No. ${serialOf(tokenId)} — ${params.tierId} ($${params.amountUsd})`,
     description:
-      "Base mainnet üzerinde x402 protokolüyle yapılmış bir mikro ödemenin " +
-      "zincir üstü makbuzu. Ödeme doğrulanıp settle edildikten sonra otomatik " +
-      "olarak basılmıştır.",
+      "Toll402Pay bileti: Base mainnet üzerinde x402 protokolüyle yapılmış bir " +
+      "mikro ödemenin zincir üstü makbuzu. Ödeme doğrulanıp settle edildikten " +
+      "sonra otomatik olarak basılmıştır. Her bilet tek bir ödemeye aittir ve " +
+      "seri numarası o ödemenin sırasıdır.",
     image,
     attributes: [
+      { trait_type: "Serial", value: serialOf(tokenId) },
       { trait_type: "Tier", value: params.tierId },
       { trait_type: "Amount (USD)", value: params.amountUsd },
       { trait_type: "Network", value: params.network },
@@ -229,6 +319,39 @@ function tokenIdFromLogs(logs: readonly unknown[]): string | null {
 }
 
 /**
+ * Yanlış seri numarasıyla basılmış bir bileti doğru numarayla yeniden yazar.
+ *
+ * En-iyi-çaba: başarısız olursa yalnızca günlüğe düşer. Bilet zaten basılmış
+ * ve geçerlidir; düzeltilen tek şey görseldeki numara.
+ */
+async function repairTokenUri(
+  ctx: {
+    walletClient: ReturnType<typeof createWalletClient>;
+    account: ReturnType<typeof privateKeyToAccount>;
+    contract: `0x${string}`;
+  },
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint
+): Promise<void> {
+  try {
+    const hash = await ctx.walletClient.writeContract({
+      address: ctx.contract,
+      abi: RECEIPT_ABI,
+      functionName: "setTokenURI",
+      args: [tokenId, buildTokenUri(params, mintedAt, tokenId)],
+      account: ctx.account,
+      chain: base,
+      type: "eip1559",
+      kzg: undefined,
+    });
+    console.log(`[receipt] Bilet #${tokenId} seri numarası düzeltildi (${hash})`);
+  } catch (err) {
+    console.error(`[receipt] Bilet #${tokenId} düzeltilemedi:`, err);
+  }
+}
+
+/**
  * Ödemeyi yapana bir makbuz basar.
  *
  * @returns Basılan makbuz, ya da basım yapılamadıysa `null`. Bu fonksiyon
@@ -252,7 +375,21 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     const walletClient = createWalletClient({ account, chain: base, transport });
 
     const mintedAt = new Date();
-    const uri = buildTokenUri(params, mintedAt);
+
+    // Seri numarası biletin görselinde duruyor, ama kimliği mint atarken
+    // kontrat veriyor. Bu yüzden numara önce okunuyor; basımdan sonra da
+    // gerçekten o numaranın verildiği doğrulanıyor (aşağıda).
+    const predictedId = (await publicClient.readContract({
+      address: config.contract,
+      abi: RECEIPT_ABI,
+      functionName: "nextTokenId",
+      // `authorizationList: undefined` yalnızca tip düzeyinde gerekiyor:
+      // strictNullChecks kapalı olduğu için viem'in koşullu tipi bu isteğe
+      // bağlı alanı zorunlu sayıyor (deploy.ts'teki kzg notuyla aynı sebep).
+      authorizationList: undefined,
+    })) as bigint;
+
+    const uri = buildTokenUri(params, mintedAt, predictedId);
 
     const txHash = await walletClient.writeContract({
       address: config.contract,
@@ -285,7 +422,24 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
       return null;
     }
 
-    console.log(`[receipt] Makbuz #${tokenId} basıldı → ${params.to} (${txHash})`);
+    // Aynı anda iki basım araya girerse tahmin tutmayabilir. Kalıcı bir ödeme
+    // kanıtının üzerinde yanlış seri numarası durmasındansa, doğru numarayla
+    // yeniden yazılması yeğdir. Nadir bir yol; ödemeyi hiç ilgilendirmiyor,
+    // bu yüzden yanıt beklemeden arka planda yapılıyor.
+    if (tokenId !== predictedId.toString()) {
+      console.warn(
+        `[receipt] Seri numarası kaydı: tahmin #${predictedId}, verilen #${tokenId}. ` +
+          "Bilet doğru numarayla yeniden yazılıyor."
+      );
+      void repairTokenUri(
+        { walletClient, account, contract: config.contract },
+        params,
+        mintedAt,
+        BigInt(tokenId)
+      );
+    }
+
+    console.log(`[receipt] Bilet #${tokenId} basıldı → ${params.to} (${txHash})`);
     return { tokenId, txHash };
   } catch (err) {
     // Gaz bitmiş, RPC düşmüş, alıcı ERC-721 kabul etmeyen bir kontrat olabilir.
