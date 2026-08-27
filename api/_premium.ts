@@ -379,7 +379,7 @@ async function attachReceipt(
   const field: ReceiptField = minted ? { ...minted, contract } : null;
   if (!minted) {
     console.warn(
-      `[receipt] Basım ${RECEIPT_WAIT_MS} ms içinde bitmedi; yanıt makbuzsuz gidiyor.`
+      `[receipt] Basım ${RECEIPT_WAIT_MS} ms içinde bitmedi; yanıt biletsiz gidiyor.`
     );
   }
   slot.receipt = field;

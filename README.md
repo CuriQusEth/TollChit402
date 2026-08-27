@@ -176,6 +176,35 @@ Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişm
 Makbuz özelliği yapılandırılmamışsa alan hiç eklenmez; basım yetişmediyse `null`
 olur. Arayüz ikisinde de sessiz kalır — ödemenin kendisi başarılıdır.
 
+### Basım çalışmıyorsa
+
+Basım yolu bilinçli olarak sessizdir: her hata yutulur ve `null` döner, ki bir
+basım sorunu asla tamamlanmış bir ödemeyi bozmasın. Bu, hata ayıklamayı
+zorlaştırır. Teşhis için gerçek bir ödemeye gerek yok:
+
+```bash
+npm run doctor:receipt
+```
+
+Betik yapılandırmayı okur, zinciri sorgular ve `mint` çağrısını **simüle eder**
+(gaz harcamadan). Sırayla kontrol ettikleri: env değişkenleri, RPC'nin Base
+mainnet olması, adreste kontrat bulunması, ABI uyumu (`totalMinted`, `symbol`),
+`owner()` ile basım cüzdanının aynı olması, cüzdanın ETH bakiyesi ve son olarak
+gerçek bir `mint()` simülasyonu — kontrat çağrıyı reddedecekse sebebini
+(örneğin `OwnableUnauthorizedAccount`) tam metniyle gösterir.
+
+Sunucu loglarında aranacak satırlar `[receipt]` ile başlar:
+
+| Log | Anlamı |
+| --- | --- |
+| `Bilet basımı kapalı: …` | env eksik ya da geçersiz |
+| `Ödeyen adres bulunamadı` | settlement yanıtından ödeyen çıkarılamadı |
+| `Basım işlemi revert etti: <tx>` | işlem zincire gitti ve reddedildi |
+| `Bilet basılamadı: <err>` | işlem gönderilmeden önce hata (gaz, RPC, adres) |
+| `ChitMinted olayı okunamadı` | işlem başarılı ama ABI olayı çözemedi |
+| `Basım … ms içinde bitmedi` | zaman aşımı; basım arka planda sürüyor |
+| *(hiç satır yok)* | kanca hiç çalışmadı — kod dağıtılmamış olabilir |
+
 ### Dağıtım
 
 Kontrat bir kez, elle dağıtılır:

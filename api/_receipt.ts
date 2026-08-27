@@ -121,7 +121,7 @@ function readConfig():
   if (problem) {
     if (!warnedAboutConfig) {
       warnedAboutConfig = true;
-      console.warn(`[receipt] Makbuz basımı kapalı: ${problem}.`);
+      console.warn(`[receipt] Bilet basımı kapalı: ${problem}.`);
     }
     return null;
   }
@@ -432,7 +432,7 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     if (!tokenId) {
       // İşlem başarılı ama olay okunamadı: makbuz basıldı, kimliği bilinmiyor.
       // Yanıta eksik bir kayıt koymaktansa hiç koymamak daha doğru.
-      console.warn(`[receipt] ReceiptMinted olayı okunamadı: ${txHash}`);
+      console.warn(`[receipt] ChitMinted olayı okunamadı: ${txHash}`);
       return null;
     }
 
