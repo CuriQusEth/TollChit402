@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Toll402Pay MCP sunucusu.
+ * TollChit402 MCP sunucusu.
  *
  * Bu proje bir x402 endpoint'i satar; burada onun *alıcı* tarafı bir MCP aracı
  * olarak sunuluyor. Claude gibi bir ajan aracı çağırdığında ödeme, aşağıdaki
@@ -190,10 +190,10 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
     );
   }
 
-  // Yanıt gövdesi aynen aktarılıyor. Makbuz NFT'si de bu gövdede `receipt`
+  // Yanıt gövdesi aynen aktarılıyor. TollChit402 bileti de bu gövdede `receipt`
   // alanı olarak gelir (sunucuda api/_receipt-response.ts ekliyor), dolayısıyla
   // ajan hiçbir ek işlem yapmadan makbuzunun tokenId/txHash bilgisini görür.
-  // Makbuz özelliği kapalıysa alan hiç bulunmaz, basım yetişmediyse null olur.
+  // Bilet özelliği kapalıysa alan hiç bulunmaz, basım yetişmediyse null olur.
   const data = (await response.json()) as Record<string, unknown>;
 
   // Settlement bilgisi PAYMENT-RESPONSE başlığından gelir. @x402/extensions'ın
@@ -217,17 +217,18 @@ async function callPremium(recipient?: string, tier: TierId = "basic", units?: n
   return { ...data, txHash };
 }
 
-const server = new McpServer({ name: "toll402pay", version: "1.0.0" });
+const server = new McpServer({ name: "tollchit402", version: "1.0.0" });
 
 server.tool(
   "get_premium_data",
   "x402 ile korunan premium endpoint'ten veri getirir. Her çağrı Base " +
     "mainnet üzerinde seçilen pakete göre bir USDC ödemesi yapar; ödeme yapılandırılmış " +
     "cüzdandan otomatik olarak çekilir ve insan onayı istenmez. Endpoint'in JSON " +
-    "yanıtını ve settlement işleminin hash'ini (txHash) döndürür. Sunucuda makbuz " +
+    "yanıtını ve settlement işleminin hash'ini (txHash) döndürür. Sunucuda bilet " +
     "özelliği açıksa yanıtta ayrıca `receipt` alanı bulunur: ödeyen cüzdana basılan " +
-    "ERC-721 makbuzun tokenId, txHash ve kontrat adresi. Basım yetişmediyse `receipt` " +
-    "null olur — bu ödemenin başarısız olduğu anlamına GELMEZ, ödeme yine tamamlanmıştır.",
+    "TollChit402 biletinin (ERC-721, sembol CHIT402) tokenId, txHash ve kontrat " +
+    "adresi. Basım yetişmediyse `receipt` null olur — bu ödemenin başarısız olduğu " +
+    "anlamına GELMEZ, ödeme yine tamamlanmıştır.",
   {
     recipient: z
       .string()
@@ -269,5 +270,5 @@ await server.connect(transport);
 
 // stdout MCP protokolüne ait; her günlük satırı stderr'e gitmeli.
 console.error(
-  `Toll402Pay MCP sunucusu hazır — ödeyen ${account.address}, hedef ${resourceServerUrl}`
+  `TollChit402 MCP sunucusu hazır — ödeyen ${account.address}, hedef ${resourceServerUrl}`
 );

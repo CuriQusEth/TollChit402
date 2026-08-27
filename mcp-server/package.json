@@ -1,11 +1,11 @@
 {
-  "name": "toll402pay-mcp",
+  "name": "tollchit402-mcp-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Toll402Pay endpoint'ini MCP aracı olarak sunar; ödemeyi kendi cüzdanıyla otomatik yapar.",
+  "description": "TollChit402 endpoint'ini MCP aracı olarak sunar; ödemeyi kendi cüzdanıyla otomatik yapar.",
   "bin": {
-    "toll402pay-mcp": "dist/index.js"
+    "tollchit402-mcp-server": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

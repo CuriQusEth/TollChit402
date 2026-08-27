@@ -186,7 +186,7 @@ function routes() {
         ],
         description: tier.description,
         mimeType: "application/json",
-        serviceName: "toll402pay",
+        serviceName: "tollchit402",
         tags: ["x402", "base", "usdc", tier.id],
         // Bazaar discovery metadata. Without this the endpoint still takes
         // payments, but the facilitator will not index it and CDP's
@@ -210,7 +210,7 @@ function routes() {
 /** Keşif metadata'sına konan sabit örnek yanıt. */
 function sampleFor(tier: Tier) {
   return {
-    service: "toll402pay",
+    service: "tollchit402",
     tier: tier.id,
     network: BASE_NETWORK,
     price: tier.price,
@@ -222,7 +222,7 @@ function sampleFor(tier: Tier) {
 /** The content served once a payment has been verified and settled. */
 function premiumPayload(tier: Tier) {
   return {
-    service: "toll402pay",
+    service: "tollchit402",
     tier: tier.id,
     network: BASE_NETWORK,
     price: tier.price,
@@ -241,13 +241,13 @@ function premiumPayload(tier: Tier) {
  */
 function agentCard(origin: string) {
   return {
-    name: "Toll402Pay",
+    name: "TollChit402",
     description:
-      "Toll402Pay — Base Mainnet üzerinde x402 protokolü (EIP-3009 'exact' şeması) ile USDC mikro ödemesi karşılığında erişilen geçit.",
+      "TollChit402 — Base Mainnet üzerinde x402 protokolü (EIP-3009 'exact' şeması) ile USDC mikro ödemesi karşılığında erişilen geçit.",
     version: "2.0.0",
     url: `${origin}${PREMIUM_ROUTE}`,
     provider: {
-      organization: "Toll402Pay",
+      organization: "TollChit402",
       url: origin,
     },
     capabilities: { streaming: false, pushNotifications: false },

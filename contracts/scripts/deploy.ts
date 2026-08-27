@@ -1,8 +1,8 @@
 /**
- * PaymentReceipt kontratını Base mainnet'e dağıtır.
+ * TollChit402 kontratını Base mainnet'e dağıtır.
  *
  * Bu betik operatör tarafından ELLE, BİR KEZ çalıştırılır — istek yolunun bir
- * parçası değildir. Çıkan adresi .env'deki RECEIPT_CONTRACT_ADDRESS alanına
+ * parçası değildir. Çıkan adresi .env'deki TOLLCHIT_CONTRACT_ADDRESS alanına
  * yazın.
  *
  * Kullanım:
@@ -17,7 +17,7 @@ import { config } from "dotenv";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { compilePaymentReceipt } from "./compile.js";
+import { compileTollChit402 } from "./compile.js";
 
 config();
 
@@ -53,7 +53,7 @@ async function main() {
   const publicClient = createPublicClient({ chain: base, transport });
   const walletClient = createWalletClient({ account, chain: base, transport });
 
-  const { abi, bytecode, solcVersion } = compilePaymentReceipt();
+  const { abi, bytecode, solcVersion } = compileTollChit402();
   console.log(`solc ${solcVersion}`);
 
   const constructorAbi = abi.find((item) => item.type === "constructor");
@@ -100,7 +100,7 @@ async function main() {
 
   console.log("");
   console.log("Dağıtım tamam. .env dosyanıza ekleyin:");
-  console.log(`RECEIPT_CONTRACT_ADDRESS=${receipt.contractAddress}`);
+  console.log(`TOLLCHIT_CONTRACT_ADDRESS=${receipt.contractAddress}`);
   console.log("");
   console.log(`BaseScan: https://basescan.org/address/${receipt.contractAddress}`);
 }

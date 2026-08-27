@@ -17,7 +17,10 @@ function Header() {
         <div className="flex items-center gap-2 bg-surface-2 px-3 py-1.5 rounded-full border border-border-strong">
           {/* Nokta emerald: ağ bağlı ve etkin — gerçek bir durum. */}
           <div className="w-2 h-2 bg-accent rounded-full shadow-[0_0_8px_var(--color-accent-glow)]"></div>
-          <span className="text-label font-bold uppercase tracking-widest text-accent hidden sm:block">
+          <span
+            lang="en"
+            className="text-label font-bold uppercase tracking-widest text-accent hidden sm:block"
+          >
             Base Mainnet
           </span>
         </div>
@@ -58,7 +61,7 @@ export default function App() {
             
             <div className="z-10 grid grid-cols-1 md:grid-cols-12 gap-12 max-w-5xl w-full px-6 md:px-12">
               <div className="md:col-span-7 flex flex-col justify-center gap-2">
-                <span className="text-muted text-label tracking-[0.3em] uppercase mb-2">
+                <span lang="en" className="text-muted text-label tracking-[0.3em] uppercase mb-2">
                   Transaction Terminal
                 </span>
                 <h1 className="text-hero font-black leading-[0.85] tracking-tighter uppercase">
@@ -83,11 +86,11 @@ export default function App() {
                 <div className="mt-10 flex gap-4 flex-wrap">
                   {/* Bunlar bilgi kutuları, durum göstergesi değil — emerald yok. */}
                   <div className="bg-surface-2 p-4 border border-border rounded-sm flex-1 min-w-[120px]">
-                    <div className="text-label uppercase text-dim font-bold mb-1">Network Fee</div>
+                    <div lang="en" className="text-label uppercase text-dim font-bold mb-1">Network Fee</div>
                     <div className="text-body text-text">&lt; $0.01 USDC</div>
                   </div>
                   <div className="bg-surface-2 p-4 border border-border rounded-sm flex-1 min-w-[120px]">
-                    <div className="text-label uppercase text-dim font-bold mb-1">Confirmations</div>
+                    <div lang="en" className="text-label uppercase text-dim font-bold mb-1">Confirmations</div>
                     <div className="text-display text-text font-bold">~2 SEC</div>
                   </div>
                 </div>
@@ -101,9 +104,12 @@ export default function App() {
 
           <StatsWidget />
 
-          <footer className="h-12 bg-bg border-t border-border px-8 flex items-center justify-between text-label text-dim uppercase tracking-widest hidden sm:flex shrink-0">
+          <footer
+            lang="en"
+            className="h-12 bg-bg border-t border-border px-8 flex items-center justify-between text-label text-dim uppercase tracking-widest hidden sm:flex shrink-0"
+          >
             <div>Protocol Version: 1.0.42-STABLE</div>
-            <div>&copy; 2026 Toll402Pay // Base Ecosystem</div>
+            <div>&copy; 2026 TollChit402 // Base Ecosystem</div>
             <div>Facilitator: x402 protocol</div>
           </footer>
         </div>

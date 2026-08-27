@@ -1,9 +1,9 @@
 /**
- * Ödeme makbuzu NFT'sinin basımı.
+ * TollChit402 bileti (ERC-721) basımı.
  *
- * Her başarılı settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir ERC-721
- * makbuz basılır (contracts/PaymentReceipt.sol). Makbuz ödemenin zincir üstü
- * kanıtıdır ve alıcının kendi cüzdanında durur.
+ * Her başarılı settlement'tan sonra ödemeyi yapan cüzdana ücretsiz bir
+ * TollChit402 bileti basılır (contracts/TollChit402.sol, sembol CHIT402).
+ * Bilet ödemenin zincir üstü kanıtıdır ve alıcının kendi cüzdanında durur.
  *
  * DİKKAT — ALICININ ÖDEMESİ GAZSIZDIR, BASIM DEĞİLDİR. Alıcı EIP-3009 ile
  * yalnızca imza atar; gazı facilitator öder. Buradaki basım ise gerçek bir
@@ -38,8 +38,15 @@ const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
  */
 const MINT_DEADLINE_MS = 45_000;
 
-/** Kontratın yalnızca ihtiyacımız olan parçası. */
-const RECEIPT_ABI = [
+/**
+ * Dağıtılan TollChit402 kontratının yalnızca ihtiyacımız olan parçası.
+ *
+ * Kontratta `nextTokenId()` ve `setTokenURI()` YOK; kimlikler 0'dan başlayıp
+ * post-increment ilerliyor ve basım olayı `ChitMinted(tokenId, to, uri)`.
+ * Bu ABI o kontratla birebir eşleşmeli — eşleşmezse basım sessizce başarısız
+ * olur (ödeme etkilenmez, ama bilet hiç görünmez).
+ */
+const TOLLCHIT_ABI = [
   {
     type: "function",
     name: "mint",
@@ -52,27 +59,18 @@ const RECEIPT_ABI = [
   },
   {
     type: "function",
-    name: "nextTokenId",
+    name: "totalMinted",
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
   {
-    type: "function",
-    name: "setTokenURI",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "tokenId", type: "uint256" },
-      { name: "uri", type: "string" },
-    ],
-    outputs: [],
-  },
-  {
     type: "event",
-    name: "ReceiptMinted",
+    name: "ChitMinted",
     inputs: [
-      { name: "to", type: "address", indexed: true },
       { name: "tokenId", type: "uint256", indexed: true },
+      { name: "to", type: "address", indexed: true },
+      { name: "uri", type: "string", indexed: false },
     ],
   },
 ] as const;
@@ -105,15 +103,15 @@ let warnedAboutConfig = false;
 function readConfig():
   | { contract: `0x${string}`; key: `0x${string}` }
   | null {
-  const contract = process.env.RECEIPT_CONTRACT_ADDRESS?.trim();
+  const contract = process.env.TOLLCHIT_CONTRACT_ADDRESS?.trim();
   const key = process.env.RECEIPT_MINTER_PRIVATE_KEY?.trim();
 
   if (!contract && !key) return null; // Özellik kapalı; bu bir hata değil.
 
   const problem = !contract
-    ? "RECEIPT_CONTRACT_ADDRESS tanımlı değil"
+    ? "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil"
     : !EVM_ADDRESS.test(contract)
-      ? `RECEIPT_CONTRACT_ADDRESS geçersiz: "${contract}"`
+      ? `TOLLCHIT_CONTRACT_ADDRESS geçersiz: "${contract}"`
       : !key
         ? "RECEIPT_MINTER_PRIVATE_KEY tanımlı değil"
         : !PRIVATE_KEY.test(key)
@@ -228,7 +226,7 @@ function receiptSvg(
     `<text x="92" y="198" font-size="10" fill="${DIM}" text-anchor="middle" letter-spacing="2">NO. ${serial}</text>`,
 
     // --- ANA BİLET ---
-    `<text x="200" y="70" font-size="30" font-weight="700" fill="${TEXT}" letter-spacing="1">TOLLCHIT</text>`,
+    `<text x="200" y="70" font-size="28" font-weight="700" fill="${TEXT}" letter-spacing="1">TOLLCHIT402</text>`,
 
     // X402 rozeti — emerald çerçeve
     `<rect x="516" y="44" width="76" height="32" rx="4" fill="none" stroke="${ACCENT}" stroke-width="2"/>`,
@@ -274,9 +272,9 @@ export function buildTokenUri(
   const image = `data:image/svg+xml;base64,${toBase64(receiptSvg(params, mintedAt, tokenId))}`;
 
   const metadata = {
-    name: `TOLLCHIT No. ${serialOf(tokenId)} — ${params.tierId} ($${params.amountUsd})`,
+    name: `TollChit402 No. ${serialOf(tokenId)} — ${params.tierId} ($${params.amountUsd})`,
     description:
-      "Toll402Pay bileti: Base mainnet üzerinde x402 protokolüyle yapılmış bir " +
+      "TollChit402 bileti: Base mainnet üzerinde x402 protokolüyle yapılmış bir " +
       "mikro ödemenin zincir üstü makbuzu. Ödeme doğrulanıp settle edildikten " +
       "sonra otomatik olarak basılmıştır. Her bilet tek bir ödemeye aittir ve " +
       "seri numarası o ödemenin sırasıdır.",
@@ -297,7 +295,52 @@ export function buildTokenUri(
   return `data:application/json;base64,${toBase64(JSON.stringify(metadata))}`;
 }
 
-/** Basım işleminin loglarından token kimliğini çıkarır. */
+/**
+ * Bir sonraki biletin kimliğini ayırır.
+ *
+ * Kontratta `nextTokenId()` yok; `totalMinted()` sayacın kendisini döndürüyor ve
+ * kimlikler 0'dan post-increment ilerlediği için bir sonraki kimlik ona eşit.
+ * Ama sayacı her basımda zincirden okumak yetmez: ardışık iki ödeme, birincinin
+ * işlemi daha madenlenmeden okursa ikisi de aynı sayıyı görür ve biletlerden
+ * birinin üzerine yanlış numara yazılır. Kontratta `setTokenURI` de olmadığı
+ * için bu sonradan düzeltilemez.
+ *
+ * Bu yüzden sayaç bir kez zincirden okunup süreç içinde ilerletiliyor ve
+ * ayırma işlemi sıraya sokuluyor. Uyuşmazlıkta ya da hatada sıfırlanıp yeniden
+ * okunuyor.
+ *
+ * Sınır: aynı cüzdanla basan ikinci bir süreç (örneğin ikinci bir serverless
+ * örneği) varsa sayaç kayabilir. Uyuşmazlık yakalanıp günlüğe yazılır ve sayaç
+ * kendini toparlar, ama o tek biletin görselindeki numara yanlış kalır.
+ */
+let nextChitId: bigint | null = null;
+let idQueue: Promise<unknown> = Promise.resolve();
+
+function resyncChitId(): void {
+  nextChitId = null;
+}
+
+async function reserveChitId(
+  readTotalMinted: () => Promise<bigint>
+): Promise<bigint> {
+  const task = idQueue.then(async () => {
+    if (nextChitId === null) {
+      nextChitId = await readTotalMinted();
+    }
+    const id = nextChitId;
+    nextChitId = id + 1n;
+    return id;
+  });
+
+  // Bir ayırma hata verse bile sıra kilitlenmemeli.
+  idQueue = task.then(
+    () => undefined,
+    () => undefined
+  );
+  return task;
+}
+
+/** Basım işleminin loglarından bilet kimliğini çıkarır. */
 function tokenIdFromLogs(logs: readonly unknown[]): string | null {
   for (const entry of logs) {
     // viem'in Base makbuz tipinde `topics` jenerik daralması yüzünden düşüyor;
@@ -305,8 +348,8 @@ function tokenIdFromLogs(logs: readonly unknown[]): string | null {
     const log = entry as { data: Hex; topics: [Hex, ...Hex[]] };
     try {
       const decoded = decodeEventLog({
-        abi: RECEIPT_ABI,
-        eventName: "ReceiptMinted",
+        abi: TOLLCHIT_ABI,
+        eventName: "ChitMinted",
         data: log.data,
         topics: log.topics,
       });
@@ -319,42 +362,9 @@ function tokenIdFromLogs(logs: readonly unknown[]): string | null {
 }
 
 /**
- * Yanlış seri numarasıyla basılmış bir bileti doğru numarayla yeniden yazar.
+ * Ödemeyi yapana bir TollChit402 bileti basar.
  *
- * En-iyi-çaba: başarısız olursa yalnızca günlüğe düşer. Bilet zaten basılmış
- * ve geçerlidir; düzeltilen tek şey görseldeki numara.
- */
-async function repairTokenUri(
-  ctx: {
-    walletClient: ReturnType<typeof createWalletClient>;
-    account: ReturnType<typeof privateKeyToAccount>;
-    contract: `0x${string}`;
-  },
-  params: ReceiptParams,
-  mintedAt: Date,
-  tokenId: bigint
-): Promise<void> {
-  try {
-    const hash = await ctx.walletClient.writeContract({
-      address: ctx.contract,
-      abi: RECEIPT_ABI,
-      functionName: "setTokenURI",
-      args: [tokenId, buildTokenUri(params, mintedAt, tokenId)],
-      account: ctx.account,
-      chain: base,
-      type: "eip1559",
-      kzg: undefined,
-    });
-    console.log(`[receipt] Bilet #${tokenId} seri numarası düzeltildi (${hash})`);
-  } catch (err) {
-    console.error(`[receipt] Bilet #${tokenId} düzeltilemedi:`, err);
-  }
-}
-
-/**
- * Ödemeyi yapana bir makbuz basar.
- *
- * @returns Basılan makbuz, ya da basım yapılamadıysa `null`. Bu fonksiyon
+ * @returns Basılan bilet, ya da basım yapılamadıysa `null`. Bu fonksiyon
  *   hiçbir koşulda fırlatmaz.
  */
 export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | null> {
@@ -377,23 +387,25 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     const mintedAt = new Date();
 
     // Seri numarası biletin görselinde duruyor, ama kimliği mint atarken
-    // kontrat veriyor. Bu yüzden numara önce okunuyor; basımdan sonra da
+    // kontrat veriyor. Bu yüzden numara önce ayrılıyor; basımdan sonra da
     // gerçekten o numaranın verildiği doğrulanıyor (aşağıda).
-    const predictedId = (await publicClient.readContract({
-      address: config.contract,
-      abi: RECEIPT_ABI,
-      functionName: "nextTokenId",
-      // `authorizationList: undefined` yalnızca tip düzeyinde gerekiyor:
-      // strictNullChecks kapalı olduğu için viem'in koşullu tipi bu isteğe
-      // bağlı alanı zorunlu sayıyor (deploy.ts'teki kzg notuyla aynı sebep).
-      authorizationList: undefined,
-    })) as bigint;
-
-    const uri = buildTokenUri(params, mintedAt, predictedId);
+    const reservedId = await reserveChitId(
+      async () =>
+        (await publicClient.readContract({
+          address: config.contract,
+          abi: TOLLCHIT_ABI,
+          functionName: "totalMinted",
+          // `authorizationList: undefined` yalnızca tip düzeyinde gerekiyor:
+          // strictNullChecks kapalı olduğu için viem'in koşullu tipi bu isteğe
+          // bağlı alanı zorunlu sayıyor (deploy.ts'teki kzg notuyla aynı sebep).
+          authorizationList: undefined,
+        })) as bigint
+    );
+    const uri = buildTokenUri(params, mintedAt, reservedId);
 
     const txHash = await walletClient.writeContract({
       address: config.contract,
-      abi: RECEIPT_ABI,
+      abi: TOLLCHIT_ABI,
       functionName: "mint",
       args: [params.to as `0x${string}`, uri],
       account,
@@ -410,6 +422,8 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     });
 
     if (receipt.status !== "success") {
+      // Numara ayrıldı ama kullanılmadı; sayaç zincirden yeniden okunmalı.
+      resyncChitId();
       console.warn(`[receipt] Basım işlemi revert etti: ${txHash}`);
       return null;
     }
@@ -422,21 +436,16 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
       return null;
     }
 
-    // Aynı anda iki basım araya girerse tahmin tutmayabilir. Kalıcı bir ödeme
-    // kanıtının üzerinde yanlış seri numarası durmasındansa, doğru numarayla
-    // yeniden yazılması yeğdir. Nadir bir yol; ödemeyi hiç ilgilendirmiyor,
-    // bu yüzden yanıt beklemeden arka planda yapılıyor.
-    if (tokenId !== predictedId.toString()) {
-      console.warn(
-        `[receipt] Seri numarası kaydı: tahmin #${predictedId}, verilen #${tokenId}. ` +
-          "Bilet doğru numarayla yeniden yazılıyor."
+    // Ayrılan numara tutmadıysa sayaç kaymış demektir (aynı cüzdanla basan
+    // ikinci bir süreç). Kontratta setTokenURI olmadığı için o biletin
+    // görselindeki numara düzeltilemez; yapılabilecek tek şey sayacı zincirden
+    // yeniden okumak ki sonraki biletler doğru olsun.
+    if (tokenId !== reservedId.toString()) {
+      console.error(
+        `[receipt] Seri numarası kaydı: ayrılan #${reservedId}, verilen #${tokenId}. ` +
+          "Bu biletin görselindeki numara yanlış; sayaç zincirden yeniden okunacak."
       );
-      void repairTokenUri(
-        { walletClient, account, contract: config.contract },
-        params,
-        mintedAt,
-        BigInt(tokenId)
-      );
+      resyncChitId();
     }
 
     console.log(`[receipt] Bilet #${tokenId} basıldı → ${params.to} (${txHash})`);
@@ -444,7 +453,11 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
   } catch (err) {
     // Gaz bitmiş, RPC düşmüş, alıcı ERC-721 kabul etmeyen bir kontrat olabilir.
     // Hiçbiri ödemeyi ilgilendirmez: ödeme çoktan zincire yazıldı.
-    console.error("[receipt] Makbuz basılamadı:", err);
+    //
+    // Sayaç sıfırlanıyor: numara ayrıldı ama bilet basılmadıysa, sıfırlamadan
+    // sonraki her bilet bir numara ileriden başlardı.
+    resyncChitId();
+    console.error("[receipt] Bilet basılamadı:", err);
     return null;
   }
 }
