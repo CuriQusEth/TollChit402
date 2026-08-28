@@ -57,6 +57,10 @@ const TEXTS = {
     en: "The minting wallet does not have enough ETH for the transaction fee. Send it a small amount of ETH on Base.",
     tr: "Basım cüzdanında işlem ücreti için yeterli ETH yok. Base ağında o cüzdana bir miktar ETH gönderin.",
   },
+  mintGasAllowance: {
+    en: "The minting wallet's ETH balance only covers {affordable} gas, but one mint needs about {needed}. Top the wallet up with ETH on Base — this wallet pays the minting gas (the payer's payment is gasless).",
+    tr: "Basım cüzdanının ETH bakiyesi yalnızca {affordable} gazı karşılıyor; bir basım ise yaklaşık {needed} gaz istiyor. Cüzdana Base ağında ETH gönderin — basımın gazını bu cüzdan öder (alıcının ödemesi gazsızdır).",
+  },
   mintNotOwner: {
     en: "The minting wallet is not the contract owner; TollChit402.mint() is owner-only. RECEIPT_MINTER_PRIVATE_KEY must be the key of the wallet that deployed the contract.",
     tr: "Basım cüzdanı kontratın sahibi değil; TollChit402.mint() yalnızca sahibe açık. RECEIPT_MINTER_PRIVATE_KEY, kontratı dağıtan cüzdanın anahtarı olmalı.",
@@ -159,6 +163,9 @@ const TEXTS = {
     tr: "RPC adresine ulaşılamıyor. BASE_RPC_URL doğru ve erişilebilir mi?",
   },
   docBytecode: { en: "Contract bytecode", tr: "Kontrat bytecode" },
+  docBytecodeSize: { en: "{bytes} bytes", tr: "{bytes} bayt" },
+  docNoCode: { en: "there is NO contract at this address", tr: "bu adreste kontrat YOK" },
+  docCheckOn: { en: "Check: {url}", tr: "Kontrol: {url}" },
   docBytecodeFix: {
     en: "The address is wrong, or the contract is deployed on another network (e.g. Base Sepolia).",
     tr: "Adres yanlış ya da kontrat başka bir ağa (örn. Base Sepolia) dağıtılmış.",
@@ -182,6 +189,14 @@ const TEXTS = {
     tr: "mint() onlyOwner. Ya kontratı doğru initialOwner ile yeniden dağıtın, ya da mevcut sahiple transferOwnership({minter}) çağırın.",
   },
   docBalance: { en: "Minting wallet ETH balance", tr: "Basım cüzdanı ETH bakiyesi" },
+  docBalanceDetail: {
+    en: "{eth} ETH — covers ~{affordable} gas; one mint needs ~{needed}",
+    tr: "{eth} ETH — yaklaşık {affordable} gazı karşılıyor; bir basım ~{needed} gaz istiyor",
+  },
+  docBalanceLowFix: {
+    en: "Send ETH to the minting wallet on Base. About {suggested} ETH covers roughly 100 mints at the current gas price. This wallet pays the minting gas (the payer's payment is gasless).",
+    tr: "Basım cüzdanına Base ağında ETH gönderin. Şu anki gaz fiyatıyla yaklaşık {suggested} ETH, kabaca 100 basıma yetiyor. Basımın gazını bu cüzdan öder (alıcının ödemesi gazsızdır).",
+  },
   docBalanceFix: {
     en: "This wallet pays the minting gas (the payer's payment is gasless). Send it ETH on Base.",
     tr: "Basım gazını bu cüzdan öder (alıcının ödemesi gazsızdır). Base ağında ETH gönderin.",
