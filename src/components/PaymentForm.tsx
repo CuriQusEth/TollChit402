@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
-import { Loader2, CheckCircle2, AlertCircle, LogOut, Ticket } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Ticket, Sparkles } from 'lucide-react';
 import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from '@x402/fetch';
 import type { ClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
@@ -16,6 +16,7 @@ import {
   loadHistory,
   relativeTime,
   shortAddress,
+  updateRecord,
   type PaymentRecord,
 } from '../lib/paymentHistory';
 
@@ -46,6 +47,29 @@ type Receipt = {
   txHash: string;
   contract: string;
 };
+
+/** Bir geçmiş satırındaki bilet talebinin durumu. */
+type ChitRequest =
+  | { state: 'signing' }
+  | { state: 'minting' }
+  | { state: 'error'; message: string };
+
+/**
+ * Sunucunun imzalamamızı istediği mesaj.
+ *
+ * api/_mint-request.ts'teki mintRequestMessage ile birebir aynı olmalı; tek
+ * karakter farkı imzayı geçersiz kılar.
+ */
+function mintRequestMessage(txHash: string): string {
+  return [
+    'TollChit402 makbuz talebi',
+    '',
+    `İşlem: ${txHash}`,
+    '',
+    'Bu imza yalnızca ödemenin size ait olduğunu kanıtlar.',
+    'Cüzdanınızdan para çıkmaz ve gaz ödemezsiniz.',
+  ].join('\n');
+}
 
 /**
  * Some wallets return the EIP-712 recovery byte (`v`) as 0x00/0x01 rather than
@@ -122,6 +146,8 @@ export default function PaymentForm() {
   // Hata anında hangi aşamada kalındığını göstermek için; 'error' bunu kaybeder.
   const [failedAt, setFailedAt] = useState<PaymentStep>('signing');
   const [history, setHistory] = useState<PaymentRecord[]>([]);
+  // txHash -> o satırdaki bilet talebinin durumu.
+  const [chitRequests, setChitRequests] = useState<Record<string, ChitRequest>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
@@ -135,6 +161,69 @@ export default function PaymentForm() {
   const pushToast = useCallback((kind: ToastKind, text: string) => {
     setToasts((current) => [...current, { id: Date.now() + Math.random(), kind, text }]);
   }, []);
+
+  /**
+   * Bir geçmiş ödeme için bilet bastırır.
+   *
+   * Sunucu, basımın gazını proje ödediği için talebi korumasız kabul etmiyor:
+   * önce cüzdanla bir mesaj imzalanıyor (gazsız), sunucu imzadan adresi
+   * kurtarıp o adresin gerçekten bu işlemdeki USDC transferini yapan taraf
+   * olduğunu zincirden doğruluyor.
+   */
+  const requestChit = async (record: PaymentRecord) => {
+    if (!walletClient) {
+      setChitRequests((c) => ({
+        ...c,
+        [record.txHash]: { state: 'error', message: 'Önce cüzdanınızı bağlayın.' },
+      }));
+      return;
+    }
+
+    setChitRequests((c) => ({ ...c, [record.txHash]: { state: 'signing' } }));
+
+    try {
+      const signature = await walletClient.signMessage({
+        account: walletClient.account,
+        message: mintRequestMessage(record.txHash),
+      });
+
+      setChitRequests((c) => ({ ...c, [record.txHash]: { state: 'minting' } }));
+
+      const response = await fetch('/api/mint-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          txHash: record.txHash,
+          signature,
+          tierId: record.tierId,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        receipt?: Receipt;
+        message?: string;
+      };
+
+      if (!response.ok || !data.receipt?.tokenId) {
+        throw new Error(data.message || `Bilet basılamadı (${response.status}).`);
+      }
+
+      // Kayda yazılıyor ki sayfa yenilendiğinde de bilet görünsün.
+      setHistory(updateRecord(record.txHash, { chit: data.receipt }));
+      setChitRequests((c) => {
+        const next = { ...c };
+        delete next[record.txHash];
+        return next;
+      });
+      pushToast('success', `Bilet #${data.receipt.tokenId} cüzdanınıza basıldı.`);
+    } catch (err) {
+      const message = describePaymentError(err, '');
+      setChitRequests((c) => ({
+        ...c,
+        [record.txHash]: { state: 'error', message },
+      }));
+    }
+  };
 
   const handlePay = async () => {
     if (!walletClient || !publicClient) {
@@ -367,9 +456,15 @@ export default function PaymentForm() {
       // Makbuz, ödemenin yanıt gövdesinde gelir (bkz. api/_receipt-response.ts).
       // Özellik kapalıysa alan hiç yoktur, basım yetişmediyse null gelir —
       // ikisinde de kart gösterilmez, çünkü ödemenin kendisi başarılı.
+      // Yerel değişken: setReceipt eşzamanlı güncellenmediği için aşağıdaki
+      // appendRecord state'i okuyamaz, bileti buradan alması gerekiyor.
+      let mintedChit: Receipt | null = null;
       try {
         const body = (await response.json()) as { receipt?: Receipt | null };
-        if (body?.receipt?.tokenId) setReceipt(body.receipt);
+        if (body?.receipt?.tokenId) {
+          mintedChit = body.receipt;
+          setReceipt(body.receipt);
+        }
       } catch (e) {
         console.warn('Yanıt gövdesi okunamadı', e);
       }
@@ -385,6 +480,10 @@ export default function PaymentForm() {
             recipient: recipient || 'sunucu ayarı',
             timestamp: new Date().toISOString(),
             network: NETWORK,
+            tierId: tier.id,
+            // Otomatik basım yetiştiyse bileti kayda da geçir; düğme o satırda
+            // "zaten basıldı" durumuna düşer.
+            ...(mintedChit ? { chit: mintedChit } : {}),
           })
         );
       }
@@ -606,33 +705,77 @@ export default function PaymentForm() {
           </div>
 
           <ul className="max-h-56 overflow-y-auto divide-y divide-border">
-            {history.map((record) => (
-              <li
-                key={record.txHash}
-                className="flex items-center justify-between gap-3 py-2 text-label"
-              >
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  {/* Tutar emerald: bu satır tamamlanmış bir ödeme. */}
-                  <span className="text-accent font-bold">{record.amount}</span>
-                  <span className="text-muted truncate">
-                    {record.recipient.startsWith('0x')
-                      ? shortAddress(record.recipient)
-                      : record.recipient}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-dim">{relativeTime(record.timestamp)}</span>
-                  <a
-                    href={`https://basescan.org/tx/${record.txHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-dim hover:text-text transition-colors"
-                  >
-                    Basescan ↗
-                  </a>
-                </div>
-              </li>
-            ))}
+            {history.map((record) => {
+              const request = chitRequests[record.txHash];
+              const busy = request?.state === 'signing' || request?.state === 'minting';
+
+              return (
+                <li key={record.txHash} className="py-2 text-label">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      {/* Tutar emerald: bu satır tamamlanmış bir ödeme. */}
+                      <span className="text-accent font-bold">{record.amount}</span>
+                      <span className="text-muted truncate">
+                        {record.recipient.startsWith('0x')
+                          ? shortAddress(record.recipient)
+                          : record.recipient}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-dim">{relativeTime(record.timestamp)}</span>
+                      <a
+                        href={`https://basescan.org/tx/${record.txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-dim hover:text-text transition-colors"
+                      >
+                        Basescan ↗
+                      </a>
+                    </div>
+                  </div>
+
+                  {record.chit ? (
+                    // Bilet zaten var: emerald, çünkü tamamlanmış bir durum.
+                    <a
+                      href={`https://basescan.org/nft/${record.chit.contract}/${record.chit.tokenId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 flex items-center gap-1.5 text-accent hover:brightness-125 transition-all"
+                    >
+                      <Ticket className="w-3 h-3" />
+                      Bilet #{record.chit.tokenId} — Basescan'de gör ↗
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => requestChit(record)}
+                      disabled={busy || !isConnected}
+                      title={
+                        isConnected
+                          ? 'Ödemeyi yaptığınız cüzdanla bir mesaj imzalarsınız; gaz ödemezsiniz.'
+                          : 'Bilet talebi için cüzdanınızı bağlayın.'
+                      }
+                      className="mt-2 flex items-center gap-1.5 text-muted hover:text-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {busy ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      {request?.state === 'signing'
+                        ? 'Cüzdanda imzalayın…'
+                        : request?.state === 'minting'
+                          ? 'Bilet basılıyor…'
+                          : 'Makbuzu NFT olarak bastır'}
+                    </button>
+                  )}
+
+                  {request?.state === 'error' && (
+                    <p className="mt-1.5 text-danger leading-relaxed">{request.message}</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}

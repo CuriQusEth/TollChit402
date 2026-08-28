@@ -176,6 +176,42 @@ Yanıt gövdesi yalnızca `receipt` alanıyla genişler; mevcut alanlar değişm
 Makbuz özelliği yapılandırılmamışsa alan hiç eklenmez; basım yetişmediyse `null`
 olur. Arayüz ikisinde de sessiz kalır — ödemenin kendisi başarılıdır.
 
+### Elle bilet talebi
+
+Otomatik basımın yanında, geçmiş panelindeki her ödeme satırında **"Makbuzu NFT
+olarak bastır"** düğmesi var. Geçmiş bir ödeme için ya da otomatik basımın
+yetişemediği bir durum için işe yarar.
+
+Basımın gazını proje ödediği için bu uç korumasız bırakılamazdı: korumasız bir
+`POST /api/mint-receipt`, herkesin bu cüzdanı kurutmasına açık olurdu. İki şey
+birlikte doğrulanıyor:
+
+1. **İsteyen, ödeyen mi?** İstemci, ödemenin işlem hash'ini içeren bir mesajı
+   cüzdanıyla imzalar (gazsız, sadece imza). Sunucu imzadan adresi kurtarır.
+2. **Ödeme gerçek mi?** O işlem zincirden okunur; başarılı olduğu, içinde gerçek
+   bir USDC transferi bulunduğu ve transferi **yapan** adresin imzayı atan
+   adresle aynı olduğu doğrulanır.
+
+Bilet yalnızca gerçekten ödeme yapmış cüzdana, kendi talebiyle basılabilir. Bir
+işlem hash'i en fazla bir kez kullanılabilir (409 `already_minted`).
+
+| Yanıt | Anlamı |
+| --- | --- |
+| `200` | Bilet basıldı; `receipt.tokenId` döner |
+| `400 invalid_hash` / `invalid_signature` | Biçim hatası |
+| `400 not_a_payment` | İşlemde USDC transferi yok |
+| `400 tx_failed` | İşlem zincirde başarısız |
+| `403 not_the_payer` | İmza, ödemeyi yapan cüzdana ait değil |
+| `404 tx_not_found` | Bu hash ile işlem bulunamadı |
+| `409 already_minted` | Bu ödeme için bilet zaten basılmış |
+| `502 mint_failed` | Basım başarısız — `/api/receipt-status`'a bakın |
+| `503 minting_disabled` | Basım yapılandırılmamış |
+
+Yinelenen basım engeli süreç belleğinde tutulur; serverless örnekleri arasında
+paylaşılmadığı için nadiren yinelenen bir bilet basılabilir. Bu bir güvenlik
+açığı değil (bilet yine yalnızca gerçek ödeyene gider), sadece küçük bir gaz
+israfı — kalıcı engel için paylaşımlı bir depo (KV) gerekir.
+
 ### Basım çalışmıyorsa
 
 Basım yolu bilinçli olarak sessizdir: her hata yutulur ve `null` döner, ki bir

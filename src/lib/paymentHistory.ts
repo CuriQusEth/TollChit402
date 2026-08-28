@@ -18,6 +18,10 @@ export type PaymentRecord = {
   recipient: string;
   timestamp: string;
   network: string;
+  /** Ödemenin paketi; bilet metadata'sına yazılır. Eski kayıtlarda yok. */
+  tierId?: string;
+  /** Bu ödeme için basılmış bilet. Yoksa düğme hâlâ gösterilir. */
+  chit?: { tokenId: string; txHash: string; contract: string };
 };
 
 function isRecord(value: unknown): value is PaymentRecord {
@@ -44,6 +48,26 @@ export function loadHistory(): PaymentRecord[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Var olan bir kaydı günceller (örneğin bileti basıldığında).
+ *
+ * Kayıt bulunamazsa liste değişmeden döner: geçmiş temizlenmiş olabilir.
+ */
+export function updateRecord(
+  txHash: string,
+  patch: Partial<PaymentRecord>
+): PaymentRecord[] {
+  const next = loadHistory().map((r) =>
+    r.txHash === txHash ? { ...r, ...patch } : r
+  );
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Yazılamazsa değişiklik kalıcı olmaz; bilet yine de basılmıştır.
+  }
+  return next;
 }
 
 /** Yeni kaydı başa ekler, listeyi son {@link MAX_RECORDS} girdiyle sınırlar. */

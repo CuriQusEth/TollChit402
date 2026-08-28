@@ -21,6 +21,7 @@ import {
   diagnoseReceiptMinting,
   renderDiagnosisHtml,
 } from "./_receipt-doctor.js";
+import { handleMintRequest } from "./_mint-request.js";
 import {
   currentReceiptSlot,
   withReceiptSlot,
@@ -79,6 +80,15 @@ export const STATS_ROUTE = "/api/stats";
  * hiçbir çıktıya girmez.
  */
 export const RECEIPT_STATUS_ROUTE = "/api/receipt-status";
+
+/**
+ * Kullanıcının isteğiyle bilet basımı.
+ *
+ * Ücretsiz ve ödeme kapısının dışında; yetkilendirme imzayla yapılıyor
+ * (bkz. api/_mint-request.ts). Basımın gazını proje ödediği için korumasız
+ * bırakılamazdı.
+ */
+export const MINT_RECEIPT_ROUTE = "/api/mint-receipt";
 
 /** Base mainnet, CAIP-2. The CDP facilitator settles `exact` payments here. */
 export const BASE_NETWORK: Network = "eip155:8453";
@@ -553,6 +563,32 @@ export function createPremiumRouter(): Router {
       });
     });
   }
+
+  router.post(MINT_RECEIPT_ROUTE, express.json({ limit: "8kb" }), async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+
+    const body = (req.body ?? {}) as {
+      txHash?: unknown;
+      signature?: unknown;
+      tierId?: unknown;
+    };
+
+    const result = await handleMintRequest(
+      {
+        txHash: typeof body.txHash === "string" ? body.txHash : "",
+        signature: typeof body.signature === "string" ? body.signature : "",
+        // Paket yalnızca metadata'ya yazılıyor; bilinmiyorsa nötr bir değer.
+        tierId: typeof body.tierId === "string" && body.tierId ? body.tierId : "unknown",
+      },
+      { contract: receiptContractAddress() }
+    );
+
+    if ("receipt" in result) {
+      res.json({ receipt: result.receipt });
+      return;
+    }
+    res.status(result.status).json({ error: result.error, message: result.message });
+  });
 
   router.get(STATS_ROUTE, async (_req, res) => {
     res.json(await readStats());
