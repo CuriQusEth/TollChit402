@@ -48,6 +48,16 @@ const MINT_DEADLINE_MS = 45_000;
 const MINT_SEND_ATTEMPTS = 3;
 
 /**
+ * Bir basımın gaz bütçesi (yaklaşık).
+ *
+ * Ölçülen değer ~203.000: çağrının calldata'sı, kısa tokenURI'nin depolanması
+ * ve ERC-721 basımı. Buradaki sayı üstüne pay eklenmiş hâli ve YALNIZCA
+ * "cüzdanda yeterli ETH var mı" kontrolü için kullanılıyor; işleme gaz sınırı
+ * olarak verilmiyor (onu düğüm tahmin ediyor).
+ */
+export const MINT_GAS_BUDGET = 250_000n;
+
+/**
  * Dağıtılan TollChit402 kontratının yalnızca ihtiyacımız olan parçası.
  *
  * Kontratta `nextTokenId()` ve `setTokenURI()` YOK; kimlikler 0'dan başlayıp
@@ -669,7 +679,21 @@ function describeMintError(err: unknown, lang: ServerLang): string {
     [summary, ...(source?.metaMessages ?? []), source?.details ?? ""].join(" ")
   );
 
-  if (/insufficient funds|exceeds the balance/i.test(raw)) {
+  // "out of gas: gas required exceeds allowance (N)": düğüm, cüzdanın
+  // bakiyesinin ancak N gaz kadarını karşıladığını söylüyor. Bu bir kontrat
+  // hatası değil, bakiye yetersizliği — ve N, ne kadar eksik olunduğunu
+  // gösterdiği için mesaja konuyor.
+  const allowance = /gas required exceeds[^0-9]*(\d+)/i.exec(raw)?.[1];
+  if (allowance) {
+    // Binlik ayracı dile göre: Türkçe'de nokta, İngilizce'de virgül.
+    const locale = lang === "tr" ? "tr-TR" : "en-US";
+    return msg(lang, "mintGasAllowance", {
+      affordable: Number(allowance).toLocaleString(locale),
+      needed: Number(MINT_GAS_BUDGET).toLocaleString(locale),
+    });
+  }
+
+  if (/insufficient funds|exceeds the balance|out of gas/i.test(raw)) {
     return msg(lang, "mintNoGas");
   }
   if (/OwnableUnauthorizedAccount|0x118cdaa7/i.test(raw)) {

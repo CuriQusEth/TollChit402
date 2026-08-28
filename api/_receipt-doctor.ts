@@ -17,7 +17,7 @@
 import { createPublicClient, formatEther, http, type Address } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { readContractAddress } from "./_receipt.js";
+import { MINT_GAS_BUDGET, readContractAddress } from "./_receipt.js";
 import { msg, type ServerLang } from "./_messages.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -104,6 +104,8 @@ function errorText(err: unknown): string {
 export async function diagnoseReceiptMinting(
   lang: ServerLang = "en"
 ): Promise<Diagnosis> {
+  // Binlik ayracı dile göre: Türkçe'de nokta, İngilizce'de virgül.
+  const locale = lang === "tr" ? "tr-TR" : "en-US";
   const T = (id: Parameters<typeof msg>[1], vars?: Record<string, string | number>) =>
     msg(lang, id, vars);
   const checks: Check[] = [];
@@ -196,17 +198,20 @@ export async function diagnoseReceiptMinting(
     const code = await client.getCode({ address });
     const hasCode = Boolean(code) && code !== "0x";
     add({
-      name: "Kontrat bytecode",
+      name: T("docBytecode"),
       ok: hasCode,
-      detail: hasCode ? `${((code as string).length - 2) / 2} bayt` : "bu adreste kontrat YOK",
+      detail: hasCode
+        ? T("docBytecodeSize", { bytes: ((code as string).length - 2) / 2 })
+        : T("docNoCode"),
       fix: hasCode
         ? undefined
-        : T("docBytecodeFix") +
-          `Kontrol: https://basescan.org/address/${address}`,
+        : `${T("docBytecodeFix")} ${T("docCheckOn", {
+            url: `https://basescan.org/address/${address}`,
+          })}`,
     });
     if (!hasCode) return done();
   } catch (err) {
-    add({ name: "Kontrat bytecode", ok: false, detail: errorText(err) });
+    add({ name: T("docBytecode"), ok: false, detail: errorText(err) });
     return done();
   }
 
@@ -271,16 +276,30 @@ export async function diagnoseReceiptMinting(
     add({ name: "owner()", ok: false, detail: errorText(err) });
   }
 
+  // Bakiyenin sıfırdan büyük olması yetmiyor: düğüm bir işlemi, cüzdanın
+  // bakiyesi gaz sınırını karşılamıyorsa "gas required exceeds allowance"
+  // diyerek reddediyor. Bu yüzden kontrol niceliksel — bakiye, güncel gaz
+  // fiyatıyla bir basımı karşılıyor mu?
   try {
-    const balance = await client.getBalance({ address: minter.address });
+    const [balance, gasPrice] = await Promise.all([
+      client.getBalance({ address: minter.address }),
+      client.getGasPrice(),
+    ]);
+
+    const affordableGas = gasPrice > 0n ? balance / gasPrice : 0n;
+    const enough = affordableGas >= MINT_GAS_BUDGET;
+    // Bir basımın ~100 katı: cüzdanı her ödemede doldurmak gerekmesin.
+    const suggested = formatEther(gasPrice * MINT_GAS_BUDGET * 100n);
+
     add({
       name: T("docBalance"),
-      ok: balance > 0n,
-      detail: `${formatEther(balance)} ETH`,
-      fix:
-        balance > 0n
-          ? undefined
-          : T("docBalanceFix"),
+      ok: enough,
+      detail: T("docBalanceDetail", {
+        eth: formatEther(balance),
+        affordable: Number(affordableGas).toLocaleString(locale),
+        needed: Number(MINT_GAS_BUDGET).toLocaleString(locale),
+      }),
+      fix: enough ? undefined : T("docBalanceLowFix", { suggested }),
     });
   } catch (err) {
     add({ name: T("docBalance"), ok: false, detail: errorText(err) });
