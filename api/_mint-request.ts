@@ -31,7 +31,7 @@ import {
   type Hex,
 } from "viem";
 import { base } from "viem/chains";
-import { mintReceipt, type ReceiptMint } from "./_receipt.js";
+import { tryMintReceipt, type ReceiptMint } from "./_receipt.js";
 
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 const SIGNATURE = /^0x[0-9a-fA-F]+$/;
@@ -264,23 +264,24 @@ export async function handleMintRequest(
   // basmasın. Basım başarısız olursa işaret geri alınıyor.
   usedTxHashes.add(txHash.toLowerCase());
 
-  const minted = await mintReceipt({
+  const outcome = await tryMintReceipt({
     to: payer.from,
     tierId,
     amountUsd: payer.amountUsd,
     network: "eip155:8453",
   });
 
-  if (!minted) {
+  if (!("receipt" in outcome)) {
     usedTxHashes.delete(txHash.toLowerCase());
+    // Sebep yanıta konuyor. Bunu istemek talebi yapan ödeyenin kendi hakkı ve
+    // sunucu günlüğüne erişimi yok; metin _receipt.ts'te zaten sırlardan
+    // arındırılıyor.
     return {
       status: 502,
       error: "mint_failed",
-      message:
-        "Bilet basılamadı. Sebebi için /api/receipt-status sayfasına bakın; " +
-        "ödemeniz bundan etkilenmez.",
+      message: `Bilet basılamadı: ${outcome.failure} Ödemeniz bundan etkilenmez.`,
     };
   }
 
-  return { receipt: { ...minted, contract: deps.contract } };
+  return { receipt: { ...outcome.receipt, contract: deps.contract } };
 }
