@@ -336,14 +336,82 @@ function receiptSvg(
  *   gerekiyor çünkü görselin içinde duruyor; çağıran taraf bunu kontrattan
  *   `nextTokenId()` ile okur ve basımdan sonra doğrular.
  */
-export function buildTokenUri(
+/**
+ * Biletin verisini sunacak sitenin KALICI adresi.
+ *
+ * tokenURI kontrata bir kez yazılıyor ve `setTokenURI` olmadığı için bir daha
+ * değişmiyor; bu yüzden adresin dağıtımdan dağıtıma sabit kalması şart.
+ * Vercel'in `VERCEL_URL` değişkeni HER dağıtımda değiştiği için bilerek
+ * kullanılmıyor — onunla yazılan bilet, bir sonraki dağıtımda ölü bağlantıya
+ * dönerdi. `VERCEL_PROJECT_PRODUCTION_URL` ise üretim alan adı, sabit.
+ */
+function publicBaseUrl(): string | null {
+  const explicit = process.env.PUBLIC_BASE_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+
+  return null;
+}
+
+/**
+ * Biletin verisini taşıyan sorgu dizesi.
+ *
+ * Uç noktanın durum tutmasına gerek kalmasın diye biletin bütün bilgisi
+ * adresin içinde: sunucu hiçbir şey saklamadan aynı görseli yeniden üretebilir.
+ * Bu adres herkesçe uydurulabilir, ama önemi yok — biletin SAHİPLİĞİ zincirde
+ * duruyor, buradaki yalnızca görsel.
+ */
+function chitQuery(params: ReceiptParams, mintedAt: Date): string {
+  return new URLSearchParams({
+    a: params.amountUsd,
+    t: params.tierId,
+    n: params.network,
+    p: params.to,
+    d: String(Math.floor(mintedAt.getTime() / 1000)),
+  }).toString();
+}
+
+/** Bir biletin görselini ve verisini sunan adresler. */
+export function chitUrls(
+  baseUrl: string,
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint
+): { metadata: string; image: string } {
+  const query = chitQuery(params, mintedAt);
+  return {
+    metadata: `${baseUrl}${CHIT_ROUTE_PREFIX}/${tokenId}.json?${query}`,
+    image: `${baseUrl}${CHIT_ROUTE_PREFIX}/${tokenId}.svg?${query}`,
+  };
+}
+
+/** Bilet uç noktalarının yol öneki. */
+export const CHIT_ROUTE_PREFIX = "/api/chit";
+
+/** Biletin görselini üretir (uç nokta bunu doğrudan sunuyor). */
+export function chitSvg(
   params: ReceiptParams,
   mintedAt: Date,
   tokenId: bigint
 ): string {
-  const image = `data:image/svg+xml;base64,${toBase64(receiptSvg(params, mintedAt, tokenId))}`;
+  return receiptSvg(params, mintedAt, tokenId);
+}
 
-  const metadata = {
+/**
+ * Biletin ERC-721 verisini üretir.
+ *
+ * `image` dışarıdan veriliyor: kontrata yazılan sürümde bu bir https adresi,
+ * yedek (barındırma adresi yokken) sürümde ise gömülü bir data URI.
+ */
+export function chitMetadata(
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint,
+  image: string
+): Record<string, unknown> {
+  return {
     name: `TollChit402 No. ${serialOf(tokenId)} — ${params.tierId} ($${params.amountUsd})`,
     description:
       "TollChit402 bileti: Base mainnet üzerinde x402 protokolüyle yapılmış bir " +
@@ -363,9 +431,47 @@ export function buildTokenUri(
       },
     ],
   };
+}
 
+/**
+ * Kontrata yazılacak tokenURI'yi üretir.
+ *
+ * Varsayılan olarak sitenin kendi uç noktasını gösteren KISA bir https adresi
+ * dönüyor. Sebebi maliyet: veri kontratın kalıcı depolamasına yazılıyor ve
+ * gömülü SVG'li sürüm 5,5 KB tutuyordu — basım başına ~3,6 milyon gaz, yani
+ * 0,001 dolarlık bir ödeme için orantısız bir ücret. Üstelik bu boyuttaki bir
+ * işlem, gaz sınırı × azami ücret kadar peşin bakiye istediği için basım
+ * cüzdanı dolu olsa bile düğüm tarafından reddedilebiliyordu. Kısa adresle
+ * basım ~230 bin gaza iniyor.
+ *
+ * Barındırma adresi yoksa (ne PUBLIC_BASE_URL ne de üretim alan adı tanımlı)
+ * eski davranışa dönülüyor: her şey data URI olarak zincire gömülüyor. Böylece
+ * özellik, adres tanımlanmamış bir kurulumda da çalışmaya devam ediyor.
+ */
+export function buildTokenUri(
+  params: ReceiptParams,
+  mintedAt: Date,
+  tokenId: bigint
+): string {
+  const baseUrl = publicBaseUrl();
+  if (baseUrl) return chitUrls(baseUrl, params, mintedAt, tokenId).metadata;
+
+  if (!warnedAboutBaseUrl) {
+    warnedAboutBaseUrl = true;
+    console.warn(
+      "[receipt] PUBLIC_BASE_URL tanımlı değil; bilet verisi zincire gömülüyor. " +
+        "Bu, basım başına ~3,6 milyon gaz demek ve düğüm işlemi reddedebilir. " +
+        "Sitenin kalıcı adresini PUBLIC_BASE_URL olarak tanımlayın."
+    );
+  }
+
+  const image = `data:image/svg+xml;base64,${toBase64(receiptSvg(params, mintedAt, tokenId))}`;
+  const metadata = chitMetadata(params, mintedAt, tokenId, image);
   return `data:application/json;base64,${toBase64(JSON.stringify(metadata))}`;
 }
+
+/** Barındırma adresi uyarısı da süreç başına bir kez. */
+let warnedAboutBaseUrl = false;
 
 /**
  * Bir sonraki biletin kimliğini ayırır.
@@ -591,7 +697,17 @@ function describeMintError(err: unknown): string {
     return "Basım cüzdanının nonce'u zincirdekiyle ayrıştı ve otomatik denemeler de yetmedi. Cüzdanda bekleyen (madenlenmemiş) bir işlem varsa o geçtikten sonra tekrar deneyin.";
   }
 
-  return summary.length > 200 ? `${summary.slice(0, 200)}…` : summary;
+  // Kategori tutmadı. Burada shortMessage TEK BAŞINA yeterli değil: bazı RPC
+  // hatalarında viem'in cümlesi tamamen jenerik ("Transaction creation
+  // failed." — JSON-RPC -32003) ve düğümün asıl açıklaması details alanında
+  // duruyor. Sebebi gizlememek için ikisi birden gösteriliyor.
+  const detail = scrub(source?.details ?? "");
+  const full =
+    detail && !summary.toLowerCase().includes(detail.toLowerCase())
+      ? `${summary} — düğümün yanıtı: ${detail}`
+      : summary;
+
+  return full.length > 300 ? `${full.slice(0, 300)}…` : full;
 }
 
 /**
