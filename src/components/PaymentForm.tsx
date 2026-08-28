@@ -10,6 +10,7 @@ import ToastStack, { type ToastMessage, type ToastKind } from './Toast';
 import { TIERS, type TierId } from '../../shared/tiers';
 import Button from './ui/Button';
 import Card from './ui/Card';
+import { useI18n, type MessageKey } from '../i18n';
 import {
   appendRecord,
   clearHistory,
@@ -26,12 +27,12 @@ const NETWORK = 'eip155:8453';
 /** Ödemenin hangi aşamada olduğunu kullanıcıya göstermek için. */
 type PaymentStep = 'idle' | 'signing' | 'verifying' | 'settling' | 'done' | 'error';
 
-const STEP_LABELS: Record<Exclude<PaymentStep, 'idle'>, string> = {
-  signing: 'Cüzdanda imzalanıyor',
-  verifying: 'Ödeme doğrulanıyor',
-  settling: 'Zincire yazılıyor',
-  done: 'Tamamlandı',
-  error: 'Başarısız',
+const STEP_KEYS: Record<Exclude<PaymentStep, 'idle'>, MessageKey> = {
+  signing: 'step.signing',
+  verifying: 'step.verifying',
+  settling: 'step.settling',
+  done: 'step.done',
+  error: 'step.error',
 };
 
 const STEP_ORDER: PaymentStep[] = ['signing', 'verifying', 'settling', 'done'];
@@ -55,20 +56,30 @@ type ChitRequest =
   | { state: 'error'; message: string };
 
 /**
- * Sunucunun imzalamamızı istediği mesaj.
+ * Cüzdanda imzalanan mesaj.
  *
- * api/_mint-request.ts'teki mintRequestMessage ile birebir aynı olmalı; tek
- * karakter farkı imzayı geçersiz kılar.
+ * api/_mint-request.ts'teki karşılığıyla birebir aynı olmalı; tek karakter
+ * farkı imzayı geçersiz kılar. Kullanıcı bunu cüzdanında okuduğu için arayüzün
+ * diliyle üretiliyor — sunucu iki dildeki metni de kabul ediyor.
  */
-function mintRequestMessage(txHash: string): string {
-  return [
-    'TollChit402 makbuz talebi',
-    '',
-    `İşlem: ${txHash}`,
-    '',
-    'Bu imza yalnızca ödemenin size ait olduğunu kanıtlar.',
-    'Cüzdanınızdan para çıkmaz ve gaz ödemezsiniz.',
-  ].join('\n');
+function mintRequestMessage(txHash: string, lang: 'en' | 'tr'): string {
+  return lang === 'tr'
+    ? [
+        'TollChit402 makbuz talebi',
+        '',
+        `İşlem: ${txHash}`,
+        '',
+        'Bu imza yalnızca ödemenin size ait olduğunu kanıtlar.',
+        'Cüzdanınızdan para çıkmaz ve gaz ödemezsiniz.',
+      ].join('\n')
+    : [
+        'TollChit402 receipt request',
+        '',
+        `Transaction: ${txHash}`,
+        '',
+        'This signature only proves the payment is yours.',
+        'No funds leave your wallet and you pay no gas.',
+      ].join('\n');
 }
 
 /**
@@ -92,20 +103,26 @@ function normalizeRecoveryByte(signature: `0x${string}`): `0x${string}` {
  * değildir, yetersiz bakiye ise cüzdana para koymayı gerektirir. Cüzdanlar reddi
  * EIP-1193'ün 4001 koduyla bildirir; kod taşımayanlar için metne bakılır.
  */
-function describePaymentError(err: unknown, priceLabel: string): string {
+function describePaymentError(
+  err: unknown,
+  priceLabel: string,
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string
+): string {
   const error = err as { code?: number; message?: string; cause?: { code?: number } };
   const code = error?.code ?? error?.cause?.code;
   const raw = error?.message ?? '';
 
   if (code === 4001 || /user rejected|user denied|rejected the request/i.test(raw)) {
-    return 'İşlemi cüzdanınızda reddettiniz. Ödeme yapılmadı.';
+    return t('err.rejected');
   }
 
   if (/insufficient (funds|balance)|transfer amount exceeds balance/i.test(raw)) {
-    return `Yetersiz bakiye. Base ağında bu paket için en az ${priceLabel} tutarında USDC bulundurmanız gerekiyor.`;
+    return t('err.insufficient', { price: priceLabel });
   }
 
-  return raw || 'Bilinmeyen bir hata oluştu.';
+  // Buraya düşen metin ya sunucunun (dili sunucu seçiyor) ya da cüzdanın
+  // kendi mesajı; ikisi de olduğu gibi gösteriliyor.
+  return raw || t('err.unknown');
 }
 
 /**
@@ -149,6 +166,7 @@ export default function PaymentForm() {
   // txHash -> o satırdaki bilet talebinin durumu.
   const [chitRequests, setChitRequests] = useState<Record<string, ChitRequest>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const { lang, t, tNode } = useI18n();
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -174,7 +192,7 @@ export default function PaymentForm() {
     if (!walletClient) {
       setChitRequests((c) => ({
         ...c,
-        [record.txHash]: { state: 'error', message: 'Önce cüzdanınızı bağlayın.' },
+        [record.txHash]: { state: 'error', message: t('err.connectFirst') },
       }));
       return;
     }
@@ -184,7 +202,7 @@ export default function PaymentForm() {
     try {
       const signature = await walletClient.signMessage({
         account: walletClient.account,
-        message: mintRequestMessage(record.txHash),
+        message: mintRequestMessage(record.txHash, lang),
       });
 
       setChitRequests((c) => ({ ...c, [record.txHash]: { state: 'minting' } }));
@@ -196,6 +214,8 @@ export default function PaymentForm() {
           txHash: record.txHash,
           signature,
           tierId: record.tierId,
+          // Sunucu hata mesajlarını arayüzün diliyle döndürsün.
+          lang,
         }),
       });
 
@@ -205,7 +225,7 @@ export default function PaymentForm() {
       };
 
       if (!response.ok || !data.receipt?.tokenId) {
-        throw new Error(data.message || `Bilet basılamadı (${response.status}).`);
+        throw new Error(data.message || t('err.mintFailed', { status: response.status }));
       }
 
       // Kayda yazılıyor ki sayfa yenilendiğinde de bilet görünsün.
@@ -215,9 +235,9 @@ export default function PaymentForm() {
         delete next[record.txHash];
         return next;
       });
-      pushToast('success', `Bilet #${data.receipt.tokenId} cüzdanınıza basıldı.`);
+      pushToast('success', t('chit.toast', { id: data.receipt.tokenId }));
     } catch (err) {
-      const message = describePaymentError(err, '');
+      const message = describePaymentError(err, '', t);
       setChitRequests((c) => ({
         ...c,
         [record.txHash]: { state: 'error', message },
@@ -227,23 +247,23 @@ export default function PaymentForm() {
 
   const handlePay = async () => {
     if (!walletClient || !publicClient) {
-      setError("Cüzdan bağlantısı bekleniyor. Lütfen tekrar deneyin.");
+      setError(t('err.walletPending'));
       return;
     }
     
     if (walletClient.chain?.id !== BASE_CHAIN_ID) {
       try {
         await switchChainAsync({ chainId: BASE_CHAIN_ID });
-        setError("Ağ Base olarak değiştirildi. Lütfen işlemi tekrar başlatın.");
+        setError(t('err.chainSwitched'));
         return;
       } catch (err: any) {
-        setError("Ağ değiştirilemedi. Lütfen manuel olarak Base ağına geçin.");
+        setError(t('err.chainSwitchFailed'));
         return;
       }
     }
     
     if (recipient && !/^0x[0-9a-fA-F]{40}$/.test(recipient)) {
-      setError("Alıcı adresi geçersiz: 0x ile başlayan 40 haneli bir adres girin.");
+      setError(t('err.badRecipient'));
       return;
     }
 
@@ -256,8 +276,7 @@ export default function PaymentForm() {
       recipient.toLowerCase() === address.toLowerCase()
     ) {
       setError(
-        "Alıcı adresi ödeme yapan cüzdanla aynı. Kendinize ödeme yapamazsınız — " +
-        "farklı bir adres girin ya da alanı boş bırakıp sunucu ayarını kullanın."
+        t('err.selfPay')
       );
       return;
     }
@@ -320,17 +339,13 @@ export default function PaymentForm() {
               // Sorun yalnızca hesap henüz zincire yazılmamışsa (ERC-6492)
               // ve facilitator o factory'yi allowlist'ine almamışsa çıkar.
               throw new Error(
-                "Bu cüzdan akıllı kontrat hesabı imzası (ERC-1271/6492) üretti ve imza " +
-                "yerel olarak doğrulanamadı. Hesabınız henüz zincire dağıtılmadıysa " +
-                "önce herhangi bir işlemle dağıtın; dağıtılmış akıllı cüzdanlar bu " +
-                "ödemeyi yapabilir. Alternatif olarak standart bir EOA hesabıyla bağlanın."
+                t('err.scaUnverified')
               );
             }
             throw new Error(
-              "Cüzdanın ürettiği imza ödeme yapan adrese çözümlenmiyor. " +
-              "Cüzdanınızda imzalayan hesabın bağlı hesapla (" +
-              `${walletClient.account.address.slice(0, 6)}...${walletClient.account.address.slice(-4)}) ` +
-              "aynı olduğundan emin olun."
+              t('err.signerMismatch', {
+                address: shortAddress(walletClient.account.address),
+              })
             );
           }
 
@@ -387,17 +402,13 @@ export default function PaymentForm() {
         
         if (errorBody.includes("invalid_exact_evm_signature")) {
           throw new Error(
-            "Ödeme imzası facilitator tarafından reddedildi. İmza, ödeme yapan " +
-            "adrese çözümlenmiyor. Sık görülen sebepler: cüzdanda bağlı olandan " +
-            "başka bir hesabın imzalaması, seçili ağın Base olmaması, ya da akıllı " +
-            "cüzdan hesabının henüz zincire dağıtılmamış olması."
+            t('err.facilitatorSignature')
           );
         }
 
         if (errorBody.includes("self_send_not_allowed")) {
           throw new Error(
-            "Facilitator kendine yapılan ödemeyi reddetti: alıcı adres, ödeme yapan " +
-            "cüzdanla aynı. Farklı bir alıcı adresi girin."
+            t('err.selfSend')
           );
         }
 
@@ -406,29 +417,27 @@ export default function PaymentForm() {
           errorBody.includes("execution reverted")
         ) {
           throw new Error(
-            "Ödeme akıllı kontrat cüzdanından yapılıyor ve facilitator imzayı " +
-            "doğrulayamadı. EIP-3009 digest'i doğrudan hesabın isValidSignature " +
-            "fonksiyonuna veriliyor; Coinbase Smart Wallet gibi hesaplar imzayı " +
-            "kendi sarmalayıcı biçiminde beklediği için bu çağrı revert ediyor. " +
-            "Lütfen standart bir EOA cüzdanıyla (MetaMask/Rabby'de normal hesap) " +
-            "bağlanın."
+            t('err.smartWallet')
           );
         }
 
         if (errorBody.includes("eip6492_factory_not_allowed")) {
           throw new Error(
-            "Cüzdanınız henüz zincire dağıtılmamış bir akıllı hesap (ERC-6492) ve " +
-            "facilitator bu hesabın factory'sini kabul etmiyor. Hesabı herhangi bir " +
-            "işlemle dağıttıktan sonra tekrar deneyin — dağıtılmış akıllı cüzdanlar " +
-            "ERC-1271 ile doğrulanır."
+            t('err.undeployed6492')
           );
         }
 
         if (errorBody.includes("invalid_exact_evm_transaction_simulation_failed")) {
-          throw new Error(`Ödeme simülasyonu başarısız oldu. Base ağında yeterli USDC bakiyeniz (bu paket için en az ${tier.price}) olduğundan emin olun.`);
+          throw new Error(t('err.simulationFailed', { price: tier.price }));
         }
         
-        throw new Error(`Sunucu Hatası: ${response.status} ${response.statusText} - ${errorBody}`);
+        throw new Error(
+          t('err.server', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorBody,
+          })
+        );
       }
 
       setStep('settling');
@@ -477,7 +486,7 @@ export default function PaymentForm() {
           appendRecord({
             txHash: finalTxHash,
             amount: tier.price,
-            recipient: recipient || 'sunucu ayarı',
+            recipient: recipient || t('history.serverDefault'),
             timestamp: new Date().toISOString(),
             network: NETWORK,
             tierId: tier.id,
@@ -488,11 +497,11 @@ export default function PaymentForm() {
         );
       }
 
-      pushToast('success', `Ödeme tamamlandı — ${tier.label} (${tier.price}).`);
+      pushToast('success', t('pay.toast', { tier: tier.label, price: tier.price }));
 
     } catch (err) {
       console.error("Tam hata:", err);
-      const message = describePaymentError(err, tier.price);
+      const message = describePaymentError(err, tier.price, t);
       setFailedAt(step === 'error' ? failedAt : step);
       setStep('error');
       setError(message);
@@ -516,17 +525,24 @@ export default function PaymentForm() {
             connectors.map((connector) => (
               <Button
                 key={connector.uid}
-                lang="en"
                 variant="secondary"
-                onClick={() => connect({ connector }, { onError: (err) => setError(`Bağlantı hatası: ${err.message}`) })}
+                onClick={() => connect({ connector }, { onError: (err) => setError(t('err.connect', { message: err.message })) })}
                 disabled={isConnecting}
               >
-                {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Connect ${connector.name}`}
+                {isConnecting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  // Yalnızca cüzdanın adı İngilizce; cümlenin kalanı arayüz
+                  // dilinde büyük harfe çevrilmeli ("ile" → "İLE").
+                  tNode('wallet.connect', {
+                    name: <span lang="en">{connector.name}</span>,
+                  })
+                )}
               </Button>
             ))
           ) : (
-            <Button lang="en" variant="secondary" onClick={() => disconnect()}>
-              Disconnect <LogOut className="w-3.5 h-3.5" />
+            <Button variant="secondary" onClick={() => disconnect()}>
+              {t('wallet.disconnect')} <LogOut className="w-3.5 h-3.5" />
             </Button>
           )}
         </div>
@@ -534,7 +550,7 @@ export default function PaymentForm() {
         <div className="space-y-6">
           <div className="space-y-2">
             <label className="text-label uppercase text-muted tracking-wider">
-              Paket
+              {t('form.tier')}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {TIERS.map((t) => (
@@ -558,17 +574,17 @@ export default function PaymentForm() {
               ))}
             </div>
             <p className="text-label text-dim leading-relaxed">
-              {TIERS.find((t) => t.id === tierId)?.description}
+              {t(`tier.${tierId}.description` as MessageKey)}
             </p>
           </div>
 
           <div className="space-y-2">
             <label className="text-label uppercase text-muted tracking-wider">
-              <span lang="en">Recipient Address</span> (Ödeme bu adrese gider)
+              <span lang="en">{t('form.recipient')}</span> {t('form.recipientHint')}
             </label>
             <input
               type="text"
-              placeholder="0x… (boşsa sunucu ayarı kullanılır)"
+              placeholder={t('form.recipientPlaceholder')}
               value={recipient}
               onChange={(e) => setRecipient(e.target.value.trim())}
               className="w-full bg-bg border border-border rounded-sm px-4 py-3 text-body focus:border-border-strong outline-none transition-colors text-text"
@@ -576,9 +592,9 @@ export default function PaymentForm() {
           </div>
 
           <div className="pt-4">
-            <div lang="en" className="flex justify-between items-end mb-4 border-b border-border pb-4">
-              <span className="text-label uppercase text-dim">Asset</span>
-              <span className="text-body font-bold text-text">Base USDC</span>
+            <div className="flex justify-between items-end mb-4 border-b border-border pb-4">
+              <span className="text-label uppercase text-dim">{t('form.asset')}</span>
+              <span lang="en" className="text-body font-bold text-text">Base USDC</span>
             </div>
             {step !== 'idle' && (
               <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-label uppercase tracking-widest">
@@ -613,8 +629,8 @@ export default function PaymentForm() {
                         }`}
                       />
                       {isFailed
-                        ? STEP_LABELS.error
-                        : STEP_LABELS[s as Exclude<PaymentStep, 'idle'>]}
+                        ? t('step.error')
+                        : t(STEP_KEYS[s as Exclude<PaymentStep, 'idle'>])}
                     </span>
                   );
                 })}
@@ -624,7 +640,6 @@ export default function PaymentForm() {
             {/* Tek `primary` düğme: emerald "geçişe izin ver" demek, o yüzden
                 yalnızca ödemeyi başlatan eylemde. */}
             <Button
-              lang="en"
               variant="primary"
               size="lg"
               onClick={handlePay}
@@ -633,12 +648,12 @@ export default function PaymentForm() {
               {isPaying ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Processing...
+                  {t('btn.processing')}
                 </>
               ) : !isConnected ? (
-                "Connect Wallet to Pay"
+                t('btn.connectToPay')
               ) : (
-                "Process Payment"
+                t('btn.pay')
               )}
             </Button>
           </div>
@@ -654,9 +669,9 @@ export default function PaymentForm() {
 
       {txHash && (
         <Card tone="accent" className="mt-6">
-          <div lang="en" className="flex justify-between text-body mb-2">
+          <div className="flex justify-between text-body mb-2">
             <span className="text-accent font-bold uppercase flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" /> TX Status: Success
+              <CheckCircle2 className="w-3.5 h-3.5" /> {t('tx.status')}
             </span>
             <a
               href={`https://basescan.org/tx/${txHash}`}
@@ -664,7 +679,7 @@ export default function PaymentForm() {
               rel="noreferrer"
               className="text-dim hover:text-text transition-colors"
             >
-              View on Basescan ↗
+              {t('tx.view')}
             </a>
           </div>
           <div className="text-label text-muted break-all">{txHash}</div>
@@ -673,9 +688,9 @@ export default function PaymentForm() {
 
       {receipt && (
         <Card tone="accent" className="mt-6">
-          <div lang="en" className="flex justify-between text-body mb-2">
+          <div className="flex justify-between text-body mb-2">
             <span className="text-accent font-bold uppercase flex items-center gap-1.5">
-              <Ticket className="w-3.5 h-3.5" /> TollChit402 Minted 🎫
+              <Ticket className="w-3.5 h-3.5" /> {t('chit.minted')}
             </span>
             <a
               href={`https://basescan.org/nft/${receipt.contract}/${receipt.tokenId}`}
@@ -683,11 +698,11 @@ export default function PaymentForm() {
               rel="noreferrer"
               className="text-dim hover:text-text transition-colors"
             >
-              View CHIT402 on Basescan ↗
+              {t('chit.view')}
             </a>
           </div>
           <div className="text-label text-muted">
-            Bilet #{receipt.tokenId} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.
+            {t('chit.body', { id: receipt.tokenId })}
           </div>
         </Card>
       )}
@@ -696,11 +711,11 @@ export default function PaymentForm() {
         <Card className="mt-6">
           <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
             <h3 className="text-label font-bold uppercase tracking-widest text-text">
-              İşlem Geçmişi
+              {t('history.title')}
               <span className="text-dim ml-2">({history.length})</span>
             </h3>
             <Button variant="ghost" size="sm" onClick={() => setHistory(clearHistory())}>
-              Temizle
+              {t('history.clear')}
             </Button>
           </div>
 
@@ -722,7 +737,7 @@ export default function PaymentForm() {
                       </span>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-dim">{relativeTime(record.timestamp)}</span>
+                      <span className="text-dim">{relativeTime(record.timestamp, t)}</span>
                       <a
                         href={`https://basescan.org/tx/${record.txHash}`}
                         target="_blank"
@@ -743,7 +758,7 @@ export default function PaymentForm() {
                       className="mt-2 flex items-center gap-1.5 text-accent hover:brightness-125 transition-all"
                     >
                       <Ticket className="w-3 h-3" />
-                      Bilet #{record.chit.tokenId} — Basescan'de gör ↗
+                      {t('chit.row', { id: record.chit.tokenId })}
                     </a>
                   ) : (
                     <button
@@ -752,8 +767,8 @@ export default function PaymentForm() {
                       disabled={busy || !isConnected}
                       title={
                         isConnected
-                          ? 'Ödemeyi yaptığınız cüzdanla bir mesaj imzalarsınız; gaz ödemezsiniz.'
-                          : 'Bilet talebi için cüzdanınızı bağlayın.'
+                          ? t('chit.hintConnected')
+                          : t('chit.hintDisconnected')
                       }
                       className="mt-2 flex items-center gap-1.5 text-muted hover:text-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -763,10 +778,10 @@ export default function PaymentForm() {
                         <Sparkles className="w-3 h-3" />
                       )}
                       {request?.state === 'signing'
-                        ? 'Cüzdanda imzalayın…'
+                        ? t('chit.signing')
                         : request?.state === 'minting'
-                          ? 'Bilet basılıyor…'
-                          : 'Makbuzu NFT olarak bastır'}
+                          ? t('chit.minting')
+                          : t('chit.mint')}
                     </button>
                   )}
 
