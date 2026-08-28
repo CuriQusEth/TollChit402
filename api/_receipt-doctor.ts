@@ -142,6 +142,25 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
     detail: process.env.BASE_RPC_URL?.trim() || "(tanımsız — public RPC kullanılıyor)",
   });
 
+  // Barındırma adresi olmadan bilet verisi zincire gömülüyor: basım başına
+  // ~3,6 milyon gaz ve düğümün işlemi reddetmesi için yeterli bir boyut.
+  // Bu yüzden eksikliği bir uyarı değil, başarısız kontrol.
+  const publicUrl =
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.trim()}`
+      : "");
+  add({
+    name: "PUBLIC_BASE_URL",
+    ok: Boolean(publicUrl),
+    detail: publicUrl || "tanımsız",
+    fix: publicUrl
+      ? undefined
+      : "Sitenin kalıcı adresini yazın (örn. https://siteniz.vercel.app). " +
+        "Tanımsızken bilet verisi zincire gömülüyor: basım başına ~3,6 milyon " +
+        "gaz ve işlem düğüm tarafından reddedilebiliyor.",
+  });
+
   if (!contractOk || !keyOk) return done();
 
   const minter = privateKeyToAccount(key as `0x${string}`);

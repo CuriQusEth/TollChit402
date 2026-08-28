@@ -16,7 +16,14 @@ import {
 } from "@x402/extensions";
 import { TIERS, type Tier } from "../shared/tiers.js";
 import { readStats, recordPayment } from "./_stats.js";
-import { mintReceipt, receiptContractAddress } from "./_receipt.js";
+import {
+  CHIT_ROUTE_PREFIX,
+  chitMetadata,
+  chitSvg,
+  mintReceipt,
+  receiptContractAddress,
+  type ReceiptParams,
+} from "./_receipt.js";
 import {
   diagnoseReceiptMinting,
   renderDiagnosisHtml,
@@ -588,6 +595,51 @@ export function createPremiumRouter(): Router {
       return;
     }
     res.status(result.status).json({ error: result.error, message: result.message });
+  });
+
+  // Biletin görseli ve verisi. Kontrata yazılan tokenURI bu adresi gösteriyor;
+  // biletin bütün bilgisi sorgu dizesinde olduğu için uç nokta durum tutmuyor.
+  //
+  // Ücretsiz ve herkese açık: cüzdanlar ve pazar yerleri (OpenSea, Basescan)
+  // burayı kimlik doğrulamadan okur. Uydurulmuş bir sorgu dizesi yalnızca
+  // uydurma bir görsel üretir; biletin SAHİPLİĞİ zincirde duruyor.
+  router.get(`${CHIT_ROUTE_PREFIX}/:file`, (req, res) => {
+    const match = /^(\d+)\.(json|svg)$/.exec(req.params.file);
+    if (!match) {
+      res.status(404).json({ error: "not_found", message: "Bilet bulunamadı." });
+      return;
+    }
+
+    const [, id, extension] = match;
+    const tokenId = BigInt(id);
+    const query = req.query as Record<string, unknown>;
+    const text = (key: string, fallback: string) =>
+      typeof query[key] === "string" ? (query[key] as string) : fallback;
+
+    const params: ReceiptParams = {
+      to: text("p", "0x0000000000000000000000000000000000000000"),
+      tierId: text("t", "unknown"),
+      amountUsd: text("a", "0.00"),
+      network: text("n", "eip155:8453"),
+    };
+    const seconds = Number(text("d", ""));
+    const mintedAt = Number.isFinite(seconds) && seconds > 0
+      ? new Date(seconds * 1000)
+      : new Date(0);
+
+    // Bilet basıldıktan sonra değişmiyor; uzun süre önbelleğe alınabilir.
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+    if (extension === "svg") {
+      res.type("image/svg+xml").send(chitSvg(params, mintedAt, tokenId));
+      return;
+    }
+
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const image =
+      `${origin}${CHIT_ROUTE_PREFIX}/${tokenId}.svg?` +
+      new URLSearchParams(req.query as Record<string, string>).toString();
+    res.json(chitMetadata(params, mintedAt, tokenId, image));
   });
 
   router.get(STATS_ROUTE, async (_req, res) => {
