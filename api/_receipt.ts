@@ -65,6 +65,15 @@ const TOLLCHIT_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
   {
+    // Kontratın devraldığı Ownable'ın hatası. Tanımı burada olmasa basım
+    // reddedildiğinde viem yalnızca çıplak seçiciyi (0x118cdaa7) gösterirdi;
+    // olmasıyla "OwnableUnauthorizedAccount" adıyla okunuyor — bu da en olası
+    // arıza (basım cüzdanı kontratın sahibi değil).
+    type: "error",
+    name: "OwnableUnauthorizedAccount",
+    inputs: [{ name: "account", type: "address" }],
+  },
+  {
     type: "event",
     name: "ChitMinted",
     inputs: [
@@ -143,27 +152,45 @@ function readConfig():
   const { value: contract } = readContractAddress();
   const key = process.env.RECEIPT_MINTER_PRIVATE_KEY?.trim();
 
-  if (!contract && !key) return null; // Özellik kapalı; bu bir hata değil.
-
-  const problem = !contract
-    ? "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil (eski adı RECEIPT_CONTRACT_ADDRESS da okunur)"
-    : !EVM_ADDRESS.test(contract)
-      ? `TOLLCHIT_CONTRACT_ADDRESS geçersiz: "${contract}"`
-      : !key
-        ? "RECEIPT_MINTER_PRIVATE_KEY tanımlı değil"
-        : !PRIVATE_KEY.test(key)
-          ? "RECEIPT_MINTER_PRIVATE_KEY geçersiz (0x + 64 hane olmalı)"
-          : null;
-
-  if (problem) {
+  if (receiptConfigProblem()) {
     if (!warnedAboutConfig) {
       warnedAboutConfig = true;
-      console.warn(`[receipt] Bilet basımı kapalı: ${problem}.`);
+      console.warn(`[receipt] Bilet basımı kapalı: ${receiptConfigProblem()}.`);
     }
     return null;
   }
 
   return { contract: contract as `0x${string}`, key: key as `0x${string}` };
+}
+
+/**
+ * Basım yapılandırmasındaki sorunu insan tarafından okunabilir biçimde döner.
+ *
+ * Yapılandırma sağlamsa `null`. İki değişken de tanımlı değilse özellik
+ * bilerek kapatılmış demektir; bu da bir sorun olarak bildirilir, çünkü
+ * kullanıcı bir bilet talep ettiyse özelliğin kapalı olduğunu bilmesi gerekir.
+ *
+ * DİKKAT: Bu metin HTTP yanıtına giriyor. Değişkenlerin adları yazılabilir,
+ * DEĞERLERİ yazılamaz — özellikle RECEIPT_MINTER_PRIVATE_KEY.
+ */
+export function receiptConfigProblem(): string | null {
+  const { value: contract } = readContractAddress();
+  const key = process.env.RECEIPT_MINTER_PRIVATE_KEY?.trim();
+
+  if (!contract && !key) {
+    return "Sunucuda bilet basımı yapılandırılmamış (TOLLCHIT_CONTRACT_ADDRESS ve RECEIPT_MINTER_PRIVATE_KEY tanımlı değil)";
+  }
+  if (!contract) {
+    return "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil (eski adı RECEIPT_CONTRACT_ADDRESS da okunur)";
+  }
+  if (!EVM_ADDRESS.test(contract)) {
+    return `TOLLCHIT_CONTRACT_ADDRESS geçersiz: "${contract}"`;
+  }
+  if (!key) return "RECEIPT_MINTER_PRIVATE_KEY tanımlı değil";
+  if (!PRIVATE_KEY.test(key)) {
+    return "RECEIPT_MINTER_PRIVATE_KEY geçersiz (0x + 64 hane olmalı)";
+  }
+  return null;
 }
 
 /** Makbuz özelliğinin yapılandırılıp yapılandırılmadığını bildirir. */
@@ -444,18 +471,98 @@ async function confirmMint(
 }
 
 /**
+ * Basım hatasını, yanıta konabilecek kısa bir sebebe çevirir.
+ *
+ * Amaç, "bir şeyler ters gitti"nin ötesine geçmek: kullanıcı hangi adımın
+ * düştüğünü görsün, sunucu günlüğüne erişmesi gerekmesin.
+ *
+ * DİKKAT: Sonuç HTTP yanıtına giriyor. Metin bu yüzden hem kısaltılıyor hem de
+ * 64 haneli hex dizileri (özel anahtar biçimi) maskeleniyor. Basım cüzdanının
+ * ADRESİ zaten zincirde herkese açık, sorun değil; ANAHTAR asla çıkmamalı.
+ */
+function describeMintError(err: unknown): string {
+  const source = err as {
+    shortMessage?: string;
+    message?: string;
+    metaMessages?: string[];
+    details?: string;
+  } | null;
+  const scrub = (text: string) =>
+    text
+      .replace(/0x[0-9a-fA-F]{64}\b/g, "0x…")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const summary = scrub(source?.shortMessage || source?.message || String(err));
+  // viem çözülmüş özel hatanın adını (OwnableUnauthorizedAccount gibi)
+  // shortMessage'a değil metaMessages'a koyuyor; sınıflandırma bu yüzden
+  // parçaların hepsine bakıyor, gösterilen özet ise shortMessage'da kalıyor.
+  const raw = scrub(
+    [summary, ...(source?.metaMessages ?? []), source?.details ?? ""].join(" ")
+  );
+
+  if (/insufficient funds|exceeds the balance/i.test(raw)) {
+    return "Basım cüzdanında işlem ücreti için yeterli ETH yok. Base ağında o cüzdana bir miktar ETH gönderin.";
+  }
+  if (/OwnableUnauthorizedAccount|0x118cdaa7/i.test(raw)) {
+    return "Basım cüzdanı kontratın sahibi değil; TollChit402.mint() yalnızca sahibe açık. RECEIPT_MINTER_PRIVATE_KEY, kontratı dağıtan cüzdanın anahtarı olmalı.";
+  }
+  if (/returned no data|no contract code|is not a contract/i.test(raw)) {
+    return "Verilen adreste beklenen kontrat bulunamadı. TOLLCHIT_CONTRACT_ADDRESS Base mainnet'teki TollChit402 adresi mi, kontrol edin.";
+  }
+  if (/timed out|timeout|fetch failed|ECONNREFUSED|ENOTFOUND|502|503|429/i.test(raw)) {
+    return "Base RPC'sine ulaşılamadı. Kendi BASE_RPC_URL'inizi tanımlamak genel uçlardaki hız sınırını aşar.";
+  }
+  if (/nonce/i.test(raw)) {
+    return "Basım cüzdanının nonce'u çakıştı; birkaç saniye sonra tekrar deneyin.";
+  }
+
+  return summary.length > 200 ? `${summary.slice(0, 200)}…` : summary;
+}
+
+/**
+ * Basımın sonucu: ya bilet, ya da okunabilir bir sebep.
+ *
+ * Ayrım `in` ile yapılıyor; tsconfig'de strictNullChecks kapalı olduğu için
+ * boolean ayraçlı birleşimler daralmıyor (kod tabanının geri kalanıyla aynı
+ * sebep).
+ */
+export type MintOutcome = { receipt: ReceiptMint } | { failure: string };
+
+/**
  * Ödemeyi yapana bir TollChit402 bileti basar.
  *
  * @returns Basılan bilet, ya da basım yapılamadıysa `null`. Bu fonksiyon
- *   hiçbir koşulda fırlatmaz.
+ *   hiçbir koşulda fırlatmaz. Sebebe de ihtiyacınız varsa
+ *   {@link tryMintReceipt} kullanın.
  */
 export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | null> {
+  const outcome = await tryMintReceipt(params);
+  return "receipt" in outcome ? outcome.receipt : null;
+}
+
+/**
+ * {@link mintReceipt} ile aynı işi yapar, ama başarısızlığın sebebini de döner.
+ *
+ * Otomatik basım yolunda sebep yalnızca günlüğe yazılır; kullanıcının bir
+ * düğmeye basarak istediği basımda ise sebebin yanıta konması gerekiyor.
+ */
+export async function tryMintReceipt(params: ReceiptParams): Promise<MintOutcome> {
+  const configProblem = receiptConfigProblem();
+  if (configProblem) {
+    if (!warnedAboutConfig) {
+      warnedAboutConfig = true;
+      console.warn(`[receipt] Bilet basımı kapalı: ${configProblem}.`);
+    }
+    return { failure: configProblem };
+  }
+
   const config = readConfig();
-  if (!config) return null;
+  if (!config) return { failure: "Bilet basımı yapılandırılmamış." };
 
   if (!EVM_ADDRESS.test(params.to)) {
     console.warn(`[receipt] Alıcı adresi geçersiz, basım atlandı: "${params.to}"`);
-    return null;
+    return { failure: `Alıcı adresi geçersiz: "${params.to}"` };
   }
 
   try {
@@ -532,7 +639,7 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
       reservedId
     );
 
-    return { tokenId: reservedId.toString(), txHash };
+    return { receipt: { tokenId: reservedId.toString(), txHash } };
   } catch (err) {
     // Gaz bitmiş, RPC düşmüş, alıcı ERC-721 kabul etmeyen bir kontrat olabilir.
     // Hiçbiri ödemeyi ilgilendirmez: ödeme çoktan zincire yazıldı.
@@ -541,6 +648,6 @@ export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | 
     // sonraki her bilet bir numara ileriden başlardı.
     resyncChitId();
     console.error("[receipt] Bilet basılamadı:", err);
-    return null;
+    return { failure: describeMintError(err) };
   }
 }
