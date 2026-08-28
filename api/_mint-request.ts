@@ -26,7 +26,7 @@ import {
   decodeEventLog,
   formatUnits,
   http,
-  verifyMessage,
+  recoverMessageAddress,
   type Address,
   type Hex,
 } from "viem";
@@ -99,10 +99,19 @@ type Deps = {
   contract: string | null;
 };
 
-/** İşlem loglarındaki ilk USDC transferini çözer. */
-function usdcTransfer(
-  logs: readonly unknown[]
-): { from: Address; to: Address; amountUsd: string } | null {
+type UsdcTransfer = { from: Address; to: Address; amountUsd: string };
+
+/**
+ * İşlemdeki TÜM USDC transferlerini çözer.
+ *
+ * Yalnızca ilkine bakmak yetmiyor: bir settlement işlemi birden fazla USDC
+ * transferi taşıyabiliyor (örneğin bir ücret transferi) ve ödeyenin transferi
+ * ilk sırada olmayabiliyor. İlkini "ödeyen" saymak, gerçekten ödeme yapmış
+ * kullanıcının talebini reddediyordu.
+ */
+function usdcTransfers(logs: readonly unknown[]): UsdcTransfer[] {
+  const found: UsdcTransfer[] = [];
+
   for (const entry of logs) {
     // viem'in Base makbuz tipinde `topics` jenerik daralması yüzünden düşüyor;
     // çalışma zamanında alan her zaman var.
@@ -115,16 +124,17 @@ function usdcTransfer(
         data: log.data,
         topics: log.topics,
       });
-      return {
+      found.push({
         from: decoded.args.from,
         to: decoded.args.to,
         amountUsd: formatUnits(decoded.args.value, USDC_DECIMALS),
-      };
+      });
     } catch {
       // Transfer olmayan loglar atlanır.
     }
   }
-  return null;
+
+  return found;
 }
 
 /**
@@ -177,7 +187,7 @@ export async function handleMintRequest(
   });
 
   // --- 1. Ödeme gerçek mi? ---
-  let transfer: ReturnType<typeof usdcTransfer>;
+  let transfers: UsdcTransfer[] = [];
   try {
     const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
     if (receipt.status !== "success") {
@@ -187,7 +197,7 @@ export async function handleMintRequest(
         message: "Bu işlem zincirde başarısız olmuş; bilet basılamaz.",
       };
     }
-    transfer = usdcTransfer(receipt.logs);
+    transfers = usdcTransfers(receipt.logs);
   } catch {
     return {
       status: 404,
@@ -197,7 +207,7 @@ export async function handleMintRequest(
     };
   }
 
-  if (!transfer) {
+  if (transfers.length === 0) {
     return {
       status: 400,
       error: "not_a_payment",
@@ -206,24 +216,46 @@ export async function handleMintRequest(
   }
 
   // --- 2. İsteyen, ödeyen mi? ---
-  let signerIsPayer = false;
-  try {
-    signerIsPayer = await verifyMessage({
-      address: transfer.from,
-      message: mintRequestMessage(txHash),
-      signature: signature as Hex,
-    });
-  } catch {
-    signerIsPayer = false;
+  // İşlemdeki transferlerin HERHANGİ birinin göndereni imzayı atmışsa geçerli.
+  const message = mintRequestMessage(txHash);
+
+  // client.verifyMessage kullanılıyor (bağımsız verifyMessage değil): bu, EOA
+  // imzalarının yanında akıllı kontrat cüzdanlarının ERC-1271/6492 imzalarını
+  // da zincirde doğruluyor. Bağımsız sürüm yalnızca ECDSA bakıyor ve akıllı
+  // cüzdanla ödeyen bir kullanıcıyı haksız yere reddediyordu.
+  let payer: UsdcTransfer | null = null;
+  for (const candidate of transfers) {
+    const valid = await client
+      .verifyMessage({
+        address: candidate.from,
+        message,
+        signature: signature as Hex,
+      })
+      .catch(() => false);
+    if (valid) {
+      payer = candidate;
+      break;
+    }
   }
 
-  if (!signerIsPayer) {
+  if (!payer) {
+    // Sebebi görünür kılmak için imzadan çözülen adres de bildiriliyor; bunsuz
+    // hata mesajı çıkmaz sokaktı. (Akıllı cüzdanlarda bu adres anlamsız olur.)
+    let signer = "çözülemedi";
+    try {
+      signer = await recoverMessageAddress({ message, signature: signature as Hex });
+    } catch {
+      // ECDSA ile çözülemedi; akıllı kontrat imzası olabilir.
+    }
+
     return {
       status: 403,
       error: "not_the_payer",
       message:
-        "İmza, bu ödemeyi yapan cüzdana ait değil. Bilet yalnızca ödemeyi yapan " +
-        "cüzdan tarafından talep edilebilir.",
+        "İmza, bu ödemeyi yapan cüzdana ait değil. " +
+        `İmzalayan: ${signer}. Bu işlemde USDC gönderen adres(ler): ` +
+        `${transfers.map((t) => t.from).join(", ")}. ` +
+        "Bilet talebini, ödemeyi yapan cüzdanla bağlanarak yapın.",
     };
   }
 
@@ -233,9 +265,9 @@ export async function handleMintRequest(
   usedTxHashes.add(txHash.toLowerCase());
 
   const minted = await mintReceipt({
-    to: transfer.from,
+    to: payer.from,
     tierId,
-    amountUsd: transfer.amountUsd,
+    amountUsd: payer.amountUsd,
     network: "eip155:8453",
   });
 
