@@ -32,6 +32,7 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import { tryMintReceipt, type ReceiptMint } from "./_receipt.js";
+import { msg, readLang, type ServerLang } from "./_messages.js";
 
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 const SIGNATURE = /^0x[0-9a-fA-F]+$/;
@@ -61,15 +62,35 @@ const TRANSFER_ABI = [
  * İşlem hash'ini içeriyor: böylece bir imza yalnızca tek bir ödeme için
  * geçerli oluyor ve başka bir talebe yeniden kullanılamıyor.
  */
-export function mintRequestMessage(txHash: string): string {
-  return [
-    "TollChit402 makbuz talebi",
-    "",
-    `İşlem: ${txHash}`,
-    "",
-    "Bu imza yalnızca ödemenin size ait olduğunu kanıtlar.",
-    "Cüzdanınızdan para çıkmaz ve gaz ödemezsiniz.",
-  ].join("\n");
+export function mintRequestMessage(txHash: string, lang: "en" | "tr" = "en"): string {
+  return lang === "tr"
+    ? [
+        "TollChit402 makbuz talebi",
+        "",
+        `İşlem: ${txHash}`,
+        "",
+        "Bu imza yalnızca ödemenin size ait olduğunu kanıtlar.",
+        "Cüzdanınızdan para çıkmaz ve gaz ödemezsiniz.",
+      ].join("\n")
+    : [
+        "TollChit402 receipt request",
+        "",
+        `Transaction: ${txHash}`,
+        "",
+        "This signature only proves the payment is yours.",
+        "No funds leave your wallet and you pay no gas.",
+      ].join("\n");
+}
+
+/**
+ * İmzanın karşılaştırılacağı bütün metinler.
+ *
+ * Arayüz iki dilli ve kullanıcı imzaladığı metni cüzdanında okuyor, bu yüzden
+ * mesaj arayüzün diliyle üretiliyor. Sunucu hangi dilin seçili olduğunu
+ * bilmediği için ikisini de deniyor; imzayı geçerli kılan hangisiyse o.
+ */
+function mintRequestMessages(txHash: string): string[] {
+  return [mintRequestMessage(txHash, "en"), mintRequestMessage(txHash, "tr")];
 }
 
 /**
@@ -145,15 +166,22 @@ function usdcTransfers(logs: readonly unknown[]): UsdcTransfer[] {
  * @param tierId    Bilete yazılacak paket adı (yalnızca metadata için).
  */
 export async function handleMintRequest(
-  { txHash, signature, tierId }: { txHash: string; signature: string; tierId: string },
+  {
+    txHash,
+    signature,
+    tierId,
+    lang: requestedLang,
+  }: { txHash: string; signature: string; tierId: string; lang?: unknown },
   deps: Deps
 ): Promise<MintRequestResult> {
+  // Mesajlar arayüzün diliyle dönüyor; istemci hangi dili gösteriyorsa onu
+  // gönderiyor. Gelmezse İngilizce.
+  const lang: ServerLang = readLang(requestedLang);
   if (!deps.contract) {
     return {
       status: 503,
       error: "minting_disabled",
-      message:
-        "Bilet basımı bu dağıtımda yapılandırılmamış. Ayrıntı için /api/receipt-status.",
+      message: msg(lang, "mintingDisabled"),
     };
   }
 
@@ -161,7 +189,7 @@ export async function handleMintRequest(
     return {
       status: 400,
       error: "invalid_hash",
-      message: "Geçersiz işlem hash'i: 0x ile başlayan 64 haneli olmalı.",
+      message: msg(lang, "badTxHash"),
     };
   }
 
@@ -169,7 +197,7 @@ export async function handleMintRequest(
     return {
       status: 400,
       error: "invalid_signature",
-      message: "Geçersiz imza biçimi.",
+      message: msg(lang, "badSignature"),
     };
   }
 
@@ -177,7 +205,7 @@ export async function handleMintRequest(
     return {
       status: 409,
       error: "already_minted",
-      message: "Bu ödeme için zaten bir bilet basılmış.",
+      message: msg(lang, "alreadyMinted"),
     };
   }
 
@@ -194,7 +222,7 @@ export async function handleMintRequest(
       return {
         status: 400,
         error: "tx_failed",
-        message: "Bu işlem zincirde başarısız olmuş; bilet basılamaz.",
+        message: msg(lang, "txFailed"),
       };
     }
     transfers = usdcTransfers(receipt.logs);
@@ -202,8 +230,7 @@ export async function handleMintRequest(
     return {
       status: 404,
       error: "tx_not_found",
-      message:
-        "Bu hash ile bir işlem bulunamadı. Base ağında ve onaylanmış olduğundan emin olun.",
+      message: msg(lang, "txNotFound"),
     };
   }
 
@@ -211,13 +238,14 @@ export async function handleMintRequest(
     return {
       status: 400,
       error: "not_a_payment",
-      message: "Bu işlemde USDC transferi yok; bir x402 ödemesi değil.",
+      message: msg(lang, "noUsdcTransfer"),
     };
   }
 
   // --- 2. İsteyen, ödeyen mi? ---
-  // İşlemdeki transferlerin HERHANGİ birinin göndereni imzayı atmışsa geçerli.
-  const message = mintRequestMessage(txHash);
+  // İşlemdeki transferlerin HERHANGİ birinin göndereni, mesajın HERHANGİ bir
+  // dildeki sürümünü imzalamışsa geçerli.
+  const messages = mintRequestMessages(txHash);
 
   // client.verifyMessage kullanılıyor (bağımsız verifyMessage değil): bu, EOA
   // imzalarının yanında akıllı kontrat cüzdanlarının ERC-1271/6492 imzalarını
@@ -225,37 +253,44 @@ export async function handleMintRequest(
   // cüzdanla ödeyen bir kullanıcıyı haksız yere reddediyordu.
   let payer: UsdcTransfer | null = null;
   for (const candidate of transfers) {
-    const valid = await client
-      .verifyMessage({
-        address: candidate.from,
-        message,
-        signature: signature as Hex,
-      })
-      .catch(() => false);
-    if (valid) {
-      payer = candidate;
-      break;
+    for (const message of messages) {
+      const valid = await client
+        .verifyMessage({
+          address: candidate.from,
+          message,
+          signature: signature as Hex,
+        })
+        .catch(() => false);
+      if (valid) {
+        payer = candidate;
+        break;
+      }
     }
+    if (payer) break;
   }
 
   if (!payer) {
     // Sebebi görünür kılmak için imzadan çözülen adres de bildiriliyor; bunsuz
     // hata mesajı çıkmaz sokaktı. (Akıllı cüzdanlarda bu adres anlamsız olur.)
-    let signer = "çözülemedi";
-    try {
-      signer = await recoverMessageAddress({ message, signature: signature as Hex });
-    } catch {
-      // ECDSA ile çözülemedi; akıllı kontrat imzası olabilir.
+    // Hangi dildeki metnin imzalandığı bilinmediği için ikisi de denenip
+    // çözülebilen ilk adres bildiriliyor.
+    let signer = msg(lang, "signerUnknown");
+    for (const message of messages) {
+      try {
+        signer = await recoverMessageAddress({ message, signature: signature as Hex });
+        break;
+      } catch {
+        // ECDSA ile çözülemedi; akıllı kontrat imzası ya da öbür dil olabilir.
+      }
     }
 
     return {
       status: 403,
       error: "not_the_payer",
-      message:
-        "İmza, bu ödemeyi yapan cüzdana ait değil. " +
-        `İmzalayan: ${signer}. Bu işlemde USDC gönderen adres(ler): ` +
-        `${transfers.map((t) => t.from).join(", ")}. ` +
-        "Bilet talebini, ödemeyi yapan cüzdanla bağlanarak yapın.",
+      message: msg(lang, "notThePayer", {
+        signer,
+        senders: transfers.map((t) => t.from).join(", "),
+      }),
     };
   }
 
@@ -264,12 +299,15 @@ export async function handleMintRequest(
   // basmasın. Basım başarısız olursa işaret geri alınıyor.
   usedTxHashes.add(txHash.toLowerCase());
 
-  const outcome = await tryMintReceipt({
-    to: payer.from,
-    tierId,
-    amountUsd: payer.amountUsd,
-    network: "eip155:8453",
-  });
+  const outcome = await tryMintReceipt(
+    {
+      to: payer.from,
+      tierId,
+      amountUsd: payer.amountUsd,
+      network: "eip155:8453",
+    },
+    lang
+  );
 
   if (!("receipt" in outcome)) {
     usedTxHashes.delete(txHash.toLowerCase());
@@ -279,7 +317,7 @@ export async function handleMintRequest(
     return {
       status: 502,
       error: "mint_failed",
-      message: `Bilet basılamadı: ${outcome.failure} Ödemeniz bundan etkilenmez.`,
+      message: msg(lang, "mintFailed", { reason: outcome.failure }),
     };
   }
 

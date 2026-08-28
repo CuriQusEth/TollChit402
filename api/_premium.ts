@@ -29,6 +29,7 @@ import {
   renderDiagnosisHtml,
 } from "./_receipt-doctor.js";
 import { handleMintRequest } from "./_mint-request.js";
+import { readLang } from "./_messages.js";
 import {
   currentReceiptSlot,
   withReceiptSlot,
@@ -578,6 +579,7 @@ export function createPremiumRouter(): Router {
       txHash?: unknown;
       signature?: unknown;
       tierId?: unknown;
+      lang?: unknown;
     };
 
     const result = await handleMintRequest(
@@ -586,6 +588,7 @@ export function createPremiumRouter(): Router {
         signature: typeof body.signature === "string" ? body.signature : "",
         // Paket yalnızca metadata'ya yazılıyor; bilinmiyorsa nötr bir değer.
         tierId: typeof body.tierId === "string" && body.tierId ? body.tierId : "unknown",
+        lang: body.lang,
       },
       { contract: receiptContractAddress() }
     );
@@ -659,12 +662,15 @@ export function createPremiumRouter(): Router {
       req.query.format !== "json" &&
       (req.headers.accept ?? "").toLowerCase().includes("text/html");
 
+    // Sayfa varsayılan olarak İngilizce; ?lang=tr Türkçesini verir.
+    const lang = readLang(req.query.lang);
+
     try {
-      const diagnosis = await diagnoseReceiptMinting();
+      const diagnosis = await diagnoseReceiptMinting(lang);
       // Bir kontrol başarısızsa 200 yerine 503: izleme araçları da görsün.
       res.status(diagnosis.ok ? 200 : 503);
       if (wantsHtml) {
-        res.type("html").send(renderDiagnosisHtml(diagnosis));
+        res.type("html").send(renderDiagnosisHtml(diagnosis, lang));
       } else {
         res.json(diagnosis);
       }

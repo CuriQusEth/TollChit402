@@ -92,21 +92,32 @@ export function clearHistory(): PaymentRecord[] {
 }
 
 /** "3 dk önce" gibi kısa bir görece zaman metni üretir. */
-export function relativeTime(iso: string): string {
+export function relativeTime(
+  iso: string,
+  t: (key: RelativeTimeKey, vars?: { n: number }) => string
+): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "-";
 
   const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (seconds < 60) return "az önce";
+  if (seconds < 60) return t("time.now");
 
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} dk önce`;
+  if (minutes < 60) return t("time.minutes", { n: minutes });
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} sa önce`;
+  if (hours < 24) return t("time.hours", { n: hours });
 
-  return `${Math.floor(hours / 24)} gün önce`;
+  return t("time.days", { n: Math.floor(hours / 24) });
 }
+
+/**
+ * Bu modül i18n katmanına bağımlı değil: metni çağıran veriyor.
+ *
+ * Sebep, geçmiş kayıtlarının saklanmasının dilden bağımsız olması — modül
+ * yalnızca hangi anahtarın gerektiğini biliyor.
+ */
+type RelativeTimeKey = "time.now" | "time.minutes" | "time.hours" | "time.days";
 
 /** Adresi 0x1234…abcd biçiminde kısaltır. */
 export function shortAddress(address: string): string {

@@ -18,6 +18,7 @@ import { createPublicClient, formatEther, http, type Address } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { readContractAddress } from "./_receipt.js";
+import { msg, type ServerLang } from "./_messages.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
@@ -100,7 +101,11 @@ function errorText(err: unknown): string {
  * Hiçbir gizli bilgi döndürmez: yalnızca herkese açık adresler, bakiye ve
  * kontrat okumaları. Private key hiçbir çıktıya girmez.
  */
-export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
+export async function diagnoseReceiptMinting(
+  lang: ServerLang = "en"
+): Promise<Diagnosis> {
+  const T = (id: Parameters<typeof msg>[1], vars?: Record<string, string | number>) =>
+    msg(lang, id, vars);
   const checks: Check[] = [];
   const add = (check: Check) => checks.push(check);
   const done = (): Diagnosis => ({ ok: checks.every((c) => c.ok), checks });
@@ -111,35 +116,32 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
 
   const contractOk = Boolean(contract) && EVM_ADDRESS.test(contract as string);
   add({
-    name: "Kontrat adresi",
+    name: T("docContract"),
     ok: contractOk,
     detail: contract
       ? contractOk
         ? `${contract}  (${source})`
-        : `geçersiz: "${contract}"  (${source})`
-      : "TOLLCHIT_CONTRACT_ADDRESS tanımlı değil (eski adı RECEIPT_CONTRACT_ADDRESS da okunur)",
+        : T("docContractInvalid", { value: contract, source: source ?? "" })
+      : T("configNoContract"),
     fix: contractOk
       ? source === "RECEIPT_CONTRACT_ADDRESS"
-        ? "Çalışıyor ama değişken eski adıyla duruyor; TOLLCHIT_CONTRACT_ADDRESS olarak yeniden adlandırın."
+        ? T("docContractLegacy")
         : undefined
-      : "Basım kapalı. Dağıtılmış TollChit402 adresini ortam değişkenlerine ekleyin " +
-        "(Vercel'de Settings > Environment Variables, ardından yeniden dağıtım).",
+      : T("docContractFix"),
   });
 
   const keyOk = Boolean(key) && PRIVATE_KEY.test(key as string);
   add({
     name: "RECEIPT_MINTER_PRIVATE_KEY",
     ok: keyOk,
-    detail: key ? (keyOk ? "tanımlı ve biçimi geçerli" : "geçersiz biçim") : "tanımlı değil",
-    fix: keyOk
-      ? undefined
-      : "Kontratın sahibi olan cüzdanın private key'i olmalı: 0x + 64 hane.",
+    detail: key ? (keyOk ? T("docKeySet") : T("docKeyBad")) : T("docUnset"),
+    fix: keyOk ? undefined : T("docKeyFix"),
   });
 
   add({
     name: "BASE_RPC_URL",
     ok: true,
-    detail: process.env.BASE_RPC_URL?.trim() || "(tanımsız — public RPC kullanılıyor)",
+    detail: process.env.BASE_RPC_URL?.trim() || T("docRpcDefault"),
   });
 
   // Barındırma adresi olmadan bilet verisi zincire gömülüyor: basım başına
@@ -153,12 +155,8 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
   add({
     name: "PUBLIC_BASE_URL",
     ok: Boolean(publicUrl),
-    detail: publicUrl || "tanımsız",
-    fix: publicUrl
-      ? undefined
-      : "Sitenin kalıcı adresini yazın (örn. https://siteniz.vercel.app). " +
-        "Tanımsızken bilet verisi zincire gömülüyor: basım başına ~3,6 milyon " +
-        "gaz ve işlem düğüm tarafından reddedilebiliyor.",
+    detail: publicUrl || T("docUnset"),
+    fix: publicUrl ? undefined : T("docPublicUrlFix"),
   });
 
   if (!contractOk || !keyOk) return done();
@@ -170,26 +168,26 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
     transport: http(process.env.BASE_RPC_URL?.trim() || undefined),
   });
 
-  add({ name: "Basım cüzdanı", ok: true, detail: minter.address });
+  add({ name: T("docMinter"), ok: true, detail: minter.address });
 
   // --- 2. Ağ ve kontrat ---
   try {
     const chainId = await client.getChainId();
     add({
-      name: "RPC ağı",
+      name: T("docRpcNetwork"),
       ok: chainId === BASE_CHAIN_ID,
       detail: `chain ${chainId}`,
       fix:
         chainId === BASE_CHAIN_ID
           ? undefined
-          : `Base mainnet (${BASE_CHAIN_ID}) bekleniyordu. BASE_RPC_URL yanlış ağa bakıyor.`,
+          : T("docWrongNetwork", { expected: BASE_CHAIN_ID }),
     });
   } catch (err) {
     add({
-      name: "RPC erişimi",
+      name: T("docRpcReach"),
       ok: false,
       detail: errorText(err),
-      fix: "RPC adresine ulaşılamıyor. BASE_RPC_URL doğru ve erişilebilir mi?",
+      fix: T("docRpcReachFix"),
     });
     return done();
   }
@@ -203,7 +201,7 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
       detail: hasCode ? `${((code as string).length - 2) / 2} bayt` : "bu adreste kontrat YOK",
       fix: hasCode
         ? undefined
-        : "Adres yanlış ya da kontrat başka bir ağa (örn. Base Sepolia) dağıtılmış. " +
+        : T("docBytecodeFix") +
           `Kontrol: https://basescan.org/address/${address}`,
     });
     if (!hasCode) return done();
@@ -220,13 +218,13 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
       functionName: "totalMinted",
       authorizationList: undefined,
     })) as bigint;
-    add({ name: "totalMinted()", ok: true, detail: `${minted} bilet basılmış` });
+    add({ name: "totalMinted()", ok: true, detail: T("docMintedCount", { count: String(minted) }) });
   } catch (err) {
     add({
       name: "totalMinted()",
       ok: false,
       detail: errorText(err),
-      fix: "Bu adresteki kontrat TollChit402 değil ya da ABI eşleşmiyor.",
+      fix: T("docAbiFix"),
     });
   }
 
@@ -241,7 +239,10 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
       name: "symbol()",
       ok: symbol === EXPECTED_SYMBOL,
       detail: symbol,
-      fix: symbol === EXPECTED_SYMBOL ? undefined : `${EXPECTED_SYMBOL} bekleniyordu; yanlış kontrat olabilir.`,
+      fix:
+        symbol === EXPECTED_SYMBOL
+          ? undefined
+          : T("docSymbolFix", { expected: EXPECTED_SYMBOL }),
     });
   } catch (err) {
     add({ name: "symbol()", ok: false, detail: errorText(err) });
@@ -257,13 +258,14 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
     })) as Address;
     const matches = owner.toLowerCase() === minter.address.toLowerCase();
     add({
-      name: "owner() == basım cüzdanı",
+      name: T("docOwner"),
       ok: matches,
-      detail: matches ? owner : `kontrat sahibi ${owner}, basım cüzdanı ${minter.address}`,
+      detail: matches
+        ? owner
+        : T("docOwnerDetail", { owner, minter: minter.address }),
       fix: matches
         ? undefined
-        : "mint() onlyOwner. Ya kontratı doğru initialOwner ile yeniden dağıtın, ya da " +
-          `mevcut sahiple transferOwnership(${minter.address}) çağırın.`,
+        : T("docOwnerFix", { minter: minter.address }),
     });
   } catch (err) {
     add({ name: "owner()", ok: false, detail: errorText(err) });
@@ -272,16 +274,16 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
   try {
     const balance = await client.getBalance({ address: minter.address });
     add({
-      name: "Basım cüzdanı ETH bakiyesi",
+      name: T("docBalance"),
       ok: balance > 0n,
       detail: `${formatEther(balance)} ETH`,
       fix:
         balance > 0n
           ? undefined
-          : "Basım gazını bu cüzdan öder (alıcının ödemesi gazsızdır). Base ağında ETH gönderin.",
+          : T("docBalanceFix"),
     });
   } catch (err) {
-    add({ name: "Basım cüzdanı ETH bakiyesi", ok: false, detail: errorText(err) });
+    add({ name: T("docBalance"), ok: false, detail: errorText(err) });
   }
 
   // --- 5. Gerçek mint simülasyonu ---
@@ -296,21 +298,21 @@ export async function diagnoseReceiptMinting(): Promise<Diagnosis> {
       authorizationList: undefined,
     });
     add({
-      name: "mint() simülasyonu",
+      name: T("docSimulation"),
       ok: true,
-      detail: `başarılı, sıradaki tokenId ${result}`,
+      detail: T("docSimulationOk", { id: String(result) }),
     });
   } catch (err) {
     const message = errorText(err);
     add({
-      name: "mint() simülasyonu",
+      name: T("docSimulation"),
       ok: false,
       detail: message,
       fix: /Ownable|unauthorized|0x118cdaa7/i.test(message)
-        ? "Basım cüzdanı kontratın sahibi değil."
+        ? T("docSimNotOwner")
         : /insufficient funds/i.test(message)
-          ? "Basım cüzdanında gaz için ETH yok."
-          : "Kontrat çağrıyı reddediyor; sebep yukarıdaki tam hata metninde.",
+          ? T("docSimNoGas")
+          : T("docSimOther"),
     });
   }
 
@@ -333,7 +335,12 @@ function escapeHtml(value: string): string {
  * Burada başarısız kontroller en üstte, ne yapılacağıyla birlikte duruyor.
  * Renkler arayüzün token'larıyla aynı (src/index.css).
  */
-export function renderDiagnosisHtml(diagnosis: Diagnosis): string {
+export function renderDiagnosisHtml(
+  diagnosis: Diagnosis,
+  lang: ServerLang = "en"
+): string {
+  const T = (id: Parameters<typeof msg>[1], vars?: Record<string, string | number>) =>
+    msg(lang, id, vars);
   const failed = diagnosis.checks.filter((c) => !c.ok);
 
   const row = (c: Check) => `
@@ -347,9 +354,9 @@ export function renderDiagnosisHtml(diagnosis: Diagnosis): string {
     </div>`;
 
   return `<!doctype html>
-<html lang="tr"><head><meta charset="utf-8">
+<html lang="${lang}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TollChit402 — bilet basımı teşhisi</title>
+<title>${T("docTitle")}</title>
 <style>
   :root{--bg:#050505;--surface:#0a0a0a;--surface2:#141414;--border:#1a1a1a;
         --border2:#2a2a2a;--text:#f5f5f5;--muted:#8b8f98;--dim:#6b7280;
@@ -377,24 +384,25 @@ export function renderDiagnosisHtml(diagnosis: Diagnosis): string {
   a{color:var(--muted)}
 </style></head>
 <body><div class="wrap">
-  <h1><span lang="en">TollChit402</span> — bilet basımı teşhisi</h1>
-  <div class="sub">Bu sayfa ödeme yapmadan yapılandırmayı ve zinciri kontrol eder</div>
+  <h1><span lang="en">TollChit402</span> — ${T("docTitle").replace(/^TollChit402\s*/, "")}</h1>
+  <div class="sub">${T("docSubtitle")}</div>
 
   <div class="verdict ${diagnosis.ok ? "ok" : "bad"}">
     ${
       diagnosis.ok
-        ? "Her kontrol başarılı. Basım çalışmalı; yine de bilet gelmiyorsa sunucu loglarındaki [receipt] satırlarına bakın."
-        : `${failed.length} kontrol başarısız — aşağıdaki “→” satırları ne yapılacağını söylüyor.`
+        ? T("docAllOk")
+        : T("docFailed", { count: failed.length })
     }
   </div>
 
   ${failed.map(row).join("")}
-  ${failed.length ? '<div class="sub" style="margin:22px 0 10px">Başarılı kontroller</div>' : ""}
+  ${failed.length ? `<div class="sub" style="margin:22px 0 10px">${T("docPassed")}</div>` : ""}
   ${diagnosis.checks.filter((c) => c.ok).map(row).join("")}
 
   <div class="foot">
-    Ham JSON: <a href="?format=json">?format=json</a> ·
-    Yerelde aynı kontroller: <code>npm run doctor:receipt</code>
+    ${T("docRawJson")}: <a href="?format=json">?format=json</a> ·
+    ${T("docLocalRun")}: <code>npm run doctor:receipt</code> ·
+    <a href="?lang=${lang === "tr" ? "en" : "tr"}" lang="en">${T("docOtherLang")}</a>
   </div>
 </div></body></html>`;
 }

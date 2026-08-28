@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, ExternalLink } from 'lucide-react';
 import Card from './ui/Card';
+import { useI18n } from '../i18n';
 
 type Stats = {
   totalPayments: number;
@@ -10,11 +11,14 @@ type Stats = {
 
 async function fetchStats(): Promise<Stats> {
   const res = await fetch('/api/stats', { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`İstatistikler alınamadı (${res.status})`);
+  // Bu metin kullanıcıya gösterilmiyor (widget kendi mesajını basıyor); yalnızca
+  // günlükte okunuyor, o yüzden çevrilmiyor.
+  if (!res.ok) throw new Error(`stats request failed (${res.status})`);
   return res.json();
 }
 
 export default function StatsWidget() {
+  const { t } = useI18n();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
@@ -30,19 +34,19 @@ export default function StatsWidget() {
           {/* Simge nötr: başlık süsü, bir durum bildirmiyor. */}
           <Activity className="text-muted w-4 h-4" />
           <h2 className="text-body font-bold uppercase tracking-widest text-text">
-            Ödeme İstatistikleri
+            {t('stats.title')}
           </h2>
         </div>
 
         {isError ? (
           <p className="text-label text-dim uppercase tracking-widest">
-            İstatistikler şu anda okunamıyor.
+            {t('stats.unavailable')}
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-label uppercase text-dim tracking-widest mb-1">
-                Toplam Ödeme
+                {t('stats.total')}
               </div>
               {/* Rakamlar emerald: doğrudan tamamlanmış ödemeleri sayıyorlar. */}
               <div className="text-display font-bold text-accent">
@@ -51,7 +55,7 @@ export default function StatsWidget() {
             </div>
             <div>
               <div className="text-label uppercase text-dim tracking-widest mb-1">
-                Toplam Hacim
+                {t('stats.volume')}
               </div>
               <div className="text-display font-bold text-accent">
                 {isLoading ? '—' : `$${data?.totalVolumeUsd ?? '0.00'}`}
@@ -64,8 +68,7 @@ export default function StatsWidget() {
           // Sayaçların nereden geldiği önemli: KV yoksa rakamlar yalnızca bu
           // sürecin ömrü boyunca birikir ve yanıltıcı görünebilir.
           <p className="mt-4 text-label text-dim leading-relaxed">
-            Kalıcı depolama (Vercel KV) yapılandırılmamış — sayaçlar bellekte
-            tutuluyor ve her yeniden başlatmada sıfırlanıyor.
+            {t('stats.ephemeral')}
           </p>
         )}
 
@@ -75,7 +78,7 @@ export default function StatsWidget() {
           rel="noreferrer"
           className="mt-4 inline-flex items-center gap-1.5 text-label uppercase tracking-widest text-dim hover:text-text transition-colors"
         >
-          Builder Code sıralaması
+          <span lang="en">{t('stats.leaderboard')}</span>
           <ExternalLink className="w-3 h-3" />
         </a>
       </Card>
