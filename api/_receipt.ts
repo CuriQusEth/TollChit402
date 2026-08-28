@@ -39,6 +39,14 @@ const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
 const MINT_DEADLINE_MS = 45_000;
 
 /**
+ * Basım işleminin gönderim denemesi sayısı.
+ *
+ * Yalnızca nonce çakışmasında yeniden deneniyor; başka hiçbir hata tekrar
+ * denenmiyor (revert eden bir çağrı ikinci denemede de revert eder).
+ */
+const MINT_SEND_ATTEMPTS = 3;
+
+/**
  * Dağıtılan TollChit402 kontratının yalnızca ihtiyacımız olan parçası.
  *
  * Kontratta `nextTokenId()` ve `setTokenURI()` YOK; kimlikler 0'dan başlayıp
@@ -470,6 +478,65 @@ async function confirmMint(
   }
 }
 
+/** Hatanın ve tüm `cause` zincirinin adlarını tek bir metinde toplar. */
+function errorNames(err: unknown): string {
+  const names: string[] = [];
+  let current = err as { name?: string; cause?: unknown } | null;
+  for (let depth = 0; current && depth < 8; depth++) {
+    if (current.name) names.push(current.name);
+    current = current.cause as { name?: string; cause?: unknown } | null;
+  }
+  return names.join(" ");
+}
+
+/**
+ * Hatanın, yeniden denemeye değer bir nonce çakışması olup olmadığını söyler.
+ *
+ * Ayrım dar tutuluyor: hatanın SINIF ADI (viem bunu NonceTooLowError gibi
+ * adlara eşliyor) ve düğümün kendi cümlesi. Çağrının calldata'sı bu kontrole
+ * hiç girmiyor — hex içinde geçen bir kelime yüzünden hata yanlış
+ * sınıflandırılmasın.
+ */
+function isNonceConflict(err: unknown): boolean {
+  if (/Nonce(TooLow|TooHigh|MaxValue)Error/i.test(errorNames(err))) return true;
+
+  const source = err as { shortMessage?: string; details?: string } | null;
+  const text = `${source?.shortMessage ?? ""} ${source?.details ?? ""}`;
+  return /nonce (provided|too low|too high|is too low|is too high|has already been used)|already known|replacement transaction underpriced/i.test(
+    text
+  );
+}
+
+/**
+ * Basım işlemini gönderir; nonce çakışmasında sayacı sıfırlayıp yeniden dener.
+ *
+ * `nonceManager` nonce'u süreç içinde tutup yerel olarak artırıyor — aynı anda
+ * settle olan iki ödemenin çakışmaması için gerekli. Bedeli şu: gönderilen bir
+ * işlem düşerse ya da hiç madenlenmezse yerel sayaç zincirdekinin ilerisinde
+ * kalıyor ve o süreçteki HER basım kalıcı olarak nonce hatasıyla düşüyor.
+ * Serverless'ta sıcak kalan bir konteyner bu duruma saatlerce takılabilir.
+ * Sayacı sıfırlamak, sonraki denemede nonce'un zincirden yeniden okunmasını
+ * sağlıyor.
+ */
+async function sendMint(
+  send: () => Promise<`0x${string}`>,
+  resetNonce: () => void
+): Promise<`0x${string}`> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await send();
+    } catch (err) {
+      if (attempt >= MINT_SEND_ATTEMPTS || !isNonceConflict(err)) throw err;
+      resetNonce();
+      console.warn(
+        `[receipt] Nonce çakıştı; sayaç sıfırlanıp yeniden denenecek ` +
+          `(${attempt}/${MINT_SEND_ATTEMPTS}).`
+      );
+      await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+    }
+  }
+}
+
 /**
  * Basım hatasını, yanıta konabilecek kısa bir sebebe çevirir.
  *
@@ -510,11 +577,18 @@ function describeMintError(err: unknown): string {
   if (/returned no data|no contract code|is not a contract/i.test(raw)) {
     return "Verilen adreste beklenen kontrat bulunamadı. TOLLCHIT_CONTRACT_ADDRESS Base mainnet'teki TollChit402 adresi mi, kontrol edin.";
   }
-  if (/timed out|timeout|fetch failed|ECONNREFUSED|ENOTFOUND|502|503|429/i.test(raw)) {
+  // Sayı desenleri (429/502/503) bilerek yok: çağrının calldata'sı da bu metne
+  // giriyor ve rastgele bir hex dizisi onları eşleştirip hatayı yanlış
+  // sınıflandırabilir.
+  if (
+    /timed out|timeout|fetch failed|ECONNREFUSED|ENOTFOUND|HTTP request failed|rate limit|too many requests/i.test(
+      raw
+    )
+  ) {
     return "Base RPC'sine ulaşılamadı. Kendi BASE_RPC_URL'inizi tanımlamak genel uçlardaki hız sınırını aşar.";
   }
-  if (/nonce/i.test(raw)) {
-    return "Basım cüzdanının nonce'u çakıştı; birkaç saniye sonra tekrar deneyin.";
+  if (isNonceConflict(err)) {
+    return "Basım cüzdanının nonce'u zincirdekiyle ayrıştı ve otomatik denemeler de yetmedi. Cüzdanda bekleyen (madenlenmemiş) bir işlem varsa o geçtikten sonra tekrar deneyin.";
   }
 
   return summary.length > 200 ? `${summary.slice(0, 200)}…` : summary;
@@ -606,18 +680,22 @@ export async function tryMintReceipt(params: ReceiptParams): Promise<MintOutcome
       authorizationList: undefined,
     });
 
-    const txHash = await walletClient.writeContract({
-      address: config.contract,
-      abi: TOLLCHIT_ABI,
-      functionName: "mint",
-      args: [params.to as `0x${string}`, uri],
-      account,
-      chain: base,
-      // Kontrat çağrısı normal bir EIP-1559 işlemi. `kzg: undefined` yalnızca
-      // tip düzeyinde gerekiyor (bkz. contracts/scripts/deploy.ts'teki not).
-      type: "eip1559",
-      kzg: undefined,
-    });
+    const txHash = await sendMint(
+      () =>
+        walletClient.writeContract({
+          address: config.contract,
+          abi: TOLLCHIT_ABI,
+          functionName: "mint",
+          args: [params.to as `0x${string}`, uri],
+          account,
+          chain: base,
+          // Kontrat çağrısı normal bir EIP-1559 işlemi. `kzg: undefined`
+          // yalnızca tip düzeyinde gerekiyor (bkz. deploy.ts'teki not).
+          type: "eip1559",
+          kzg: undefined,
+        }),
+      () => nonceManager.reset({ address: account.address, chainId: base.id })
+    );
 
     // Blok onayı BEKLENMİYOR. Sebep: bu fonksiyon ödemenin yanıtını bekleten
     // yolun içinde. Base'de blok ~2 sn ve bunun üstüne 5 RPC turu biniyor;
