@@ -76,10 +76,6 @@ const MESSAGES = {
     "tx.status": "TX Status: Success",
     "tx.view": "View on Basescan ↗",
 
-    "chit.minted": "TollChit402 Minted 🎫",
-    "chit.view": "View CHIT402 on Basescan ↗",
-    "chit.body":
-      "Chit #{id} was minted to your wallet — on-chain proof of the payment.",
     "chit.row": "Chit #{id} — view on Basescan ↗",
     "chit.mint": "Mint receipt as an NFT",
     "chit.signing": "Sign in your wallet…",
@@ -187,10 +183,6 @@ const MESSAGES = {
     "tx.status": "İşlem Durumu: Başarılı",
     "tx.view": "Basescan'de gör ↗",
 
-    "chit.minted": "TollChit402 basıldı 🎫",
-    "chit.view": "CHIT402'yi Basescan'de gör ↗",
-    "chit.body":
-      "Bilet #{id} cüzdanınıza basıldı — ödemenin zincir üstü kanıtı.",
     "chit.row": "Bilet #{id} — Basescan'de gör ↗",
     "chit.mint": "Makbuzu NFT olarak bastır",
     "chit.signing": "Cüzdanda imzalayın…",
