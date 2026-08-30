@@ -344,7 +344,7 @@ facilitator, ödeme settle edildikten sonra endpoint'i indeksleyebilir ve alıc�
 
 402 yanıtına Schema 2'nin `a` (app) alanı eklenir ve facilitator bunu settlement
 calldata'sına gömer — böylece bu endpoint'in Base üzerindeki ödemeleri
-uygulamaya atfedilir. Proje kendi kodu (`bc_g6baqkul`) ile gelir; builder code
+uygulamaya atfedilir. Proje kendi kodu (`bc_1k7i0i1w`) ile gelir; builder code
 gizli bir değer değil, herkese açık atıf verisidir.
 
 Bir fork'u kendi kodunuza atfetmek için `BUILDER_CODE` tanımlayın. Atfı tamamen
