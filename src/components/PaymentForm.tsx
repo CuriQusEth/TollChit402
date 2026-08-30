@@ -157,7 +157,6 @@ export default function PaymentForm() {
   const [recipient, setRecipient] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<PaymentStep>('idle');
   // Hata anında hangi aşamada kalındığını göstermek için; 'error' bunu kaybeder.
@@ -286,7 +285,6 @@ export default function PaymentForm() {
     setIsPaying(true);
     setError(null);
     setTxHash(null);
-    setReceipt(null);
     setStep('signing');
     setFailedAt('signing');
 
@@ -462,22 +460,9 @@ export default function PaymentForm() {
         console.warn('Settlement başlığı çözülemedi', e);
       }
 
-      // Makbuz, ödemenin yanıt gövdesinde gelir (bkz. api/_receipt-response.ts).
-      // Özellik kapalıysa alan hiç yoktur, basım yetişmediyse null gelir —
-      // ikisinde de kart gösterilmez, çünkü ödemenin kendisi başarılı.
-      // Yerel değişken: setReceipt eşzamanlı güncellenmediği için aşağıdaki
-      // appendRecord state'i okuyamaz, bileti buradan alması gerekiyor.
-      let mintedChit: Receipt | null = null;
-      try {
-        const body = (await response.json()) as { receipt?: Receipt | null };
-        if (body?.receipt?.tokenId) {
-          mintedChit = body.receipt;
-          setReceipt(body.receipt);
-        }
-      } catch (e) {
-        console.warn('Yanıt gövdesi okunamadı', e);
-      }
-
+      // Bilet ödemeyle birlikte OTOMATİK basılmıyor: ödeyen, işlem geçmişindeki
+      // düğmeyle kendisi talep ediyor. Böylece basımın gazı yalnızca gerçekten
+      // bilet isteyen için harcanıyor ve ödeme yanıtı basıma hiç bağlı değil.
       setTxHash(finalTxHash);
       setStep('done');
 
@@ -490,9 +475,6 @@ export default function PaymentForm() {
             timestamp: new Date().toISOString(),
             network: NETWORK,
             tierId: tier.id,
-            // Otomatik basım yetiştiyse bileti kayda da geçir; düğme o satırda
-            // "zaten basıldı" durumuna düşer.
-            ...(mintedChit ? { chit: mintedChit } : {}),
           })
         );
       }
@@ -683,27 +665,6 @@ export default function PaymentForm() {
             </a>
           </div>
           <div className="text-label text-muted break-all">{txHash}</div>
-        </Card>
-      )}
-
-      {receipt && (
-        <Card tone="accent" className="mt-6">
-          <div className="flex justify-between text-body mb-2">
-            <span className="text-accent font-bold uppercase flex items-center gap-1.5">
-              <Ticket className="w-3.5 h-3.5" /> {t('chit.minted')}
-            </span>
-            <a
-              href={`https://basescan.org/nft/${receipt.contract}/${receipt.tokenId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-dim hover:text-text transition-colors"
-            >
-              {t('chit.view')}
-            </a>
-          </div>
-          <div className="text-label text-muted">
-            {t('chit.body', { id: receipt.tokenId })}
-          </div>
         </Card>
       )}
 

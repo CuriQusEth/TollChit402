@@ -741,20 +741,9 @@ export type MintOutcome = { receipt: ReceiptMint } | { failure: string };
 /**
  * Ödemeyi yapana bir TollChit402 bileti basar.
  *
- * @returns Basılan bilet, ya da basım yapılamadıysa `null`. Bu fonksiyon
- *   hiçbir koşulda fırlatmaz. Sebebe de ihtiyacınız varsa
- *   {@link tryMintReceipt} kullanın.
- */
-export async function mintReceipt(params: ReceiptParams): Promise<ReceiptMint | null> {
-  const outcome = await tryMintReceipt(params);
-  return "receipt" in outcome ? outcome.receipt : null;
-}
-
-/**
- * {@link mintReceipt} ile aynı işi yapar, ama başarısızlığın sebebini de döner.
- *
- * Otomatik basım yolunda sebep yalnızca günlüğe yazılır; kullanıcının bir
- * düğmeye basarak istediği basımda ise sebebin yanıta konması gerekiyor.
+ * Bu fonksiyon hiçbir koşulda fırlatmaz: başarısızlık, okunabilir bir sebeple
+ * birlikte dönen değerde bildiriliyor. Sebep yanıta konuyor çünkü basımı
+ * kullanıcı bir düğmeye basarak kendisi istiyor ve neden olmadığını görmeli.
  */
 export async function tryMintReceipt(
   params: ReceiptParams,
