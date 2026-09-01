@@ -125,6 +125,35 @@ tahsil eder. Talep edilen birim sayısı tavana kırpılır, çünkü yetkilendi
 Paket tablosu `shared/tiers.ts` içindedir; sunucu, tarayıcı ve agent card aynı
 kaynaktan okur.
 
+## Günaydın Base (ücretsiz uç)
+
+Ödeme akışının yanında, tam tersi bir uç: `BaseGM` kontratı ücretsiz ve herkese
+açık — ödeme de kimlik doğrulama da istemiyor, `onlyOwner` bir kısmı yok. Herkes
+günde bir kez `gm()` çağırabiliyor; ardışık günlerde çağıran serisini büyütüyor,
+gün atlayan sıfırlanıyor.
+
+Kontrat: [`0x3C7b0F6ba861De9d43c1Bd083005aa64949c0Cf3`](https://basescan.org/address/0x3C7b0F6ba861De9d43c1Bd083005aa64949c0Cf3)
+(Base mainnet). Arayüz tarafı `src/components/GmWidget.tsx`, kontrat arayüzü
+`src/lib/gm.ts`.
+
+| Fonksiyon | Ne yapar |
+| --- | --- |
+| `gm()` | Çağıran adres için günde bir kez çalışır; aynı gün ikinci çağrı `AlreadySaidGmToday` ile revert eder |
+| `currentStreak(address)` | Adresin güncel serisi (bugün henüz gm demediyse ama dün dediyse seri canlı sayılır) |
+| `hasSaidGmToday(address)` | Bugün gm dedi mi — düğmenin aktif/pasif durumunu belirler |
+| `totalGMs()` | Tüm zamanların toplam gm sayısı |
+
+**Bu işlemin gazını kullanıcı öder.** x402 ödemesi alıcı için gazsızdır (EIP-3009
+ile yalnızca imza atılır, gazı facilitator öder). `gm()` ise cüzdandan gönderilen
+sıradan bir işlem: gazını çağıran öder. İki akış birbirine karışmasın diye kart
+bunu açıkça yazıyor.
+
+Kart, kontrat okunamadığında (yanlış adres, ABI uyuşmazlığı, RPC arızası)
+**hiç görünmez**. Bozuk bir kart göstermektense yok olmayı yeğliyor: bu özellik
+ödeme akışının yanında ikincil ve onu hiçbir koşulda etkilememeli. Gönderimden
+önce `simulateContract` çağrılıyor, böylece aynı gün ikinci kez basan kullanıcı
+boş yere gaz ödemiyor.
+
 ## Ödeme makbuzu NFT'si
 
 Ödemesini yapmış bir cüzdan, istediğinde kendine ücretsiz bir ERC-721 bilet

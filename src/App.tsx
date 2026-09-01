@@ -6,6 +6,7 @@ import { config } from './wagmi';
 import Logo from './components/Logo';
 import PaymentForm from './components/PaymentForm';
 import StatsWidget from './components/StatsWidget';
+import GmWidget from './components/GmWidget';
 
 const queryClient = new QueryClient();
 
@@ -125,6 +126,12 @@ function Shell() {
       </main>
 
       <StatsWidget />
+
+      {/* Ücretli uçtan sonra ücretsiz olan: gm kartı istatistiklerin hemen
+          altında, aynı genişlikte. */}
+      <div className="w-full max-w-5xl mx-auto px-6 md:px-12 mb-12">
+        <GmWidget />
+      </div>
 
       <footer className="h-12 bg-bg border-t border-border px-8 flex items-center justify-between text-label text-dim uppercase tracking-widest hidden sm:flex shrink-0">
         <div>{t('footer.protocol')}</div>

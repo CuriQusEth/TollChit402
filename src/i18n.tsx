@@ -40,6 +40,21 @@ const MESSAGES = {
     "tier.metered.description":
       "Usage-based endpoint: pass a unit count with ?units=, and only the amount actually used is charged, up to the cap.",
 
+    "gm.title": "Good Morning, Base",
+    "gm.blurb":
+      "The opposite of the paid endpoint above: free, open to everyone, no payment and no sign-in. Say gm once a day; call it on consecutive days and your streak grows, skip a day and it resets.",
+    "gm.total": "Total GMs",
+    "gm.streak": "Your Streak",
+    "gm.say": "Say gm",
+    "gm.sending": "Sending…",
+    "gm.already": "You already said gm today — come back tomorrow.",
+    "gm.connect": "Connect your wallet to say gm",
+    "gm.done": "gm is on chain. See you tomorrow.",
+    "gm.rejected": "You rejected the transaction in your wallet.",
+    "gm.gasNote":
+      "Unlike the payment above, this one is not gasless: gm is an ordinary transaction sent from your wallet, so you pay its gas. It costs a fraction of a cent on Base.",
+    "gm.contract": "Contract on Basescan ↗",
+
     "hero.terminal": "Transaction Terminal",
     "hero.pay": "Pay",
     "hero.blurb":
@@ -146,6 +161,21 @@ const MESSAGES = {
       "Genişletilmiş demo yanıtı: ödeme ayrıntıları ve paket bilgisiyle birlikte döner.",
     "tier.metered.description":
       "Kullanım bazlı uç: ?units= ile birim sayısı verilir, tavana kadar yalnızca kullanılan tutar tahsil edilir.",
+
+    "gm.title": "Günaydın Base",
+    "gm.blurb":
+      "Yukarıdaki ücretli ucun tam tersi: ücretsiz, herkese açık, ödeme de kimlik doğrulama da istemiyor. Günde bir kez gm deyin; ardışık günlerde derseniz seriniz büyür, gün atlarsanız sıfırlanır.",
+    "gm.total": "Toplam GM",
+    "gm.streak": "Seriniz",
+    "gm.say": "gm de",
+    "gm.sending": "Gönderiliyor…",
+    "gm.already": "Bugün zaten gm dediniz — yarın tekrar bekleriz.",
+    "gm.connect": "gm demek için cüzdanınızı bağlayın",
+    "gm.done": "gm zincire yazıldı. Yarın görüşürüz.",
+    "gm.rejected": "İşlemi cüzdanınızda reddettiniz.",
+    "gm.gasNote":
+      "Yukarıdaki ödemenin aksine bu gazsız değil: gm, cüzdanınızdan gönderilen sıradan bir işlem, gazını siz ödersiniz. Base'de bir sentin küçük bir kesri tutar.",
+    "gm.contract": "Kontratı Basescan'de gör ↗",
 
     "hero.terminal": "İşlem Terminali",
     "hero.pay": "Öde",
