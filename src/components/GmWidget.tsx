@@ -4,9 +4,54 @@ import { Loader2, Sunrise, Flame } from 'lucide-react';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import { GM_ABI, GM_CONTRACT } from '../lib/gm';
-import { useI18n } from '../i18n';
+import { useI18n, type MessageKey } from '../i18n';
 
 const BASE_CHAIN_ID = 8453;
+
+/**
+ * Zincirden gelen hatayı okunabilir bir cümleye çevirir.
+ *
+ * DİKKAT: viem, çözülmüş özel hatanın adını (`AlreadySaidGmToday` gibi)
+ * `shortMessage`'a KOYMUYOR — orada yalnızca "The contract function "gm"
+ * reverted." gibi jenerik bir cümle duruyor, ad ise `metaMessages` içinde.
+ * Bu yüzden sınıflandırma bütün alanlara bakıyor. (Aynı tuzağa
+ * api/_receipt.ts'te de düşülmüştü.)
+ */
+function describeGmError(
+  err: unknown,
+  t: (key: MessageKey) => string
+): { text: string; tone: 'info' | 'error' } {
+  const source = err as {
+    shortMessage?: string;
+    message?: string;
+    metaMessages?: string[];
+    details?: string;
+  } | null;
+
+  const clean = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const summary = clean(source?.shortMessage || source?.message || String(err));
+  const haystack = clean(
+    [summary, ...(source?.metaMessages ?? []), source?.details ?? ''].join(' ')
+  );
+
+  // Bu ikisi arıza değil, normal durum: bugün zaten gm denmiş ya da kullanıcı
+  // işlemi kendi reddetmiş. Kırmızı göstermek yanıltıcı olurdu.
+  if (/AlreadySaidGmToday/i.test(haystack)) {
+    return { text: t('gm.already'), tone: 'info' };
+  }
+  if (/user rejected|user denied|4001/i.test(haystack)) {
+    return { text: t('gm.rejected'), tone: 'info' };
+  }
+
+  // Sınıflandırılamadı. Kontratın kendi cümlesi varsa onu da göster: jenerik
+  // "reverted" tek başına hiçbir şey anlatmıyor.
+  const detail = clean(source?.details ?? '');
+  const full =
+    detail && !summary.toLowerCase().includes(detail.toLowerCase())
+      ? `${summary} — ${detail}`
+      : summary;
+  return { text: full || t('err.unknown'), tone: 'error' };
+}
 
 /** Zincirden okunan durum. Okuma başarısızsa null kalır ve kart gizlenir. */
 type GmState = {
@@ -81,9 +126,13 @@ export default function GmWidget() {
 
       setState({ total, streak, saidToday });
     } catch (err) {
-      // Adres yanlış, ABI uyuşmuyor ya da RPC düştü. Kart gizlenir.
+      // İlk okuma düşerse kart hiç görünmez: adres yanlış, ABI uyuşmuyor ya da
+      // RPC kapalı olabilir. Ama bir kez okunduktan SONRA gelen geçici bir
+      // arıza kartı yok etmemeli — kullanıcı düğmeye bastığı anda panelin
+      // gözden kaybolması, olan biten hakkında hiçbir şey söylemez.
       console.warn('[gm] Kontrat okunamadı:', err);
-      setState(null);
+      // Durum bilerek DOKUNULMADAN bırakılıyor: ilk okuma düştüyse zaten null
+      // ve kart görünmüyor; sonraki bir arıza ise ekranda duranı korur.
     }
   }, [publicClient, address]);
 
@@ -129,17 +178,16 @@ export default function GmWidget() {
       setMessage(t('gm.done'));
       await refresh();
     } catch (err) {
-      const raw = (err as { shortMessage?: string; message?: string })?.shortMessage
-        ?? (err as Error)?.message
-        ?? '';
-      setPhase('error');
-      setMessage(
-        /AlreadySaidGmToday/i.test(raw)
-          ? t('gm.already')
-          : /user rejected|user denied|4001/i.test(raw)
-            ? t('gm.rejected')
-            : raw || t('err.unknown')
-      );
+      // Tam hata konsolda kalsın: sınıflandırma tutmazsa teşhis oradan sürer.
+      console.warn('[gm] gm() başarısız:', err);
+      const described = describeGmError(err, t);
+      setPhase(described.tone === 'error' ? 'error' : 'idle');
+      setMessage(described.text);
+
+      // Durumu zincirden tazele. Kullanıcı sayfayı açtıktan SONRA başka bir
+      // yerden (Remix, Basescan, ikinci sekme) gm demişse buradaki okuma
+      // eskimiş olur ve düğme yanlışlıkla açık kalır; tazeleme onu kapatır.
+      await refresh();
     }
   };
 
