@@ -24,6 +24,33 @@ import {
 const BASE_CHAIN_ID = 8453;
 const NETWORK = 'eip155:8453';
 
+/** Base mainnet USDC — ödemelerin yapıldığı varlık. */
+const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const;
+
+const ERC20_BALANCE_ABI = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+/**
+ * "$0.25" gibi bir etiketi USDC'nin atomik birimine çevirir (6 hane).
+ *
+ * Ondalık aritmetiği kayan noktayla yapmıyoruz: 0.001 * 1e6 gibi bir çarpım
+ * kuruş düzeyinde yanlış sonuç verebiliyor.
+ */
+function priceToAtomic(label: string): bigint | null {
+  const match = /^\$?(\d+)(?:\.(\d+))?$/.exec(label.trim().replace(/^≤\s*/, ''));
+  if (!match) return null;
+  const whole = match[1];
+  const fraction = (match[2] ?? '').padEnd(6, '0').slice(0, 6);
+  return BigInt(whole) * 1_000_000n + BigInt(fraction || '0');
+}
+
 /** Ödemenin hangi aşamada olduğunu kullanıcıya göstermek için. */
 type PaymentStep = 'idle' | 'signing' | 'verifying' | 'settling' | 'done' | 'error';
 
@@ -282,6 +309,32 @@ export default function PaymentForm() {
 
     const tier = TIERS.find((t) => t.id === tierId) ?? TIERS[0];
 
+    // Ödeme denenmeden ÖNCE bakiye kontrolü. Yetersiz bakiyede facilitator'ın
+    // transferi zincirde revert ediyor ve geriye yalnızca "execution reverted"
+    // kalıyor — kullanıcı hem cüzdanını boş yere açmış hem de sebebi
+    // anlamayacağı bir hata almış oluyordu.
+    const required = priceToAtomic(tier.price);
+    if (required !== null) {
+      try {
+        const balance = (await publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: ERC20_BALANCE_ABI,
+          functionName: 'balanceOf',
+          args: [walletClient.account.address],
+          authorizationList: undefined,
+        })) as bigint;
+
+        if (balance < required) {
+          setError(t('err.insufficient', { price: tier.price }));
+          return;
+        }
+      } catch (err) {
+        // Okuma başarısızsa ödeme yine denenir: bu kontrol bir kolaylık,
+        // ödemenin ön koşulu değil.
+        console.warn('USDC bakiyesi okunamadı, ödeme yine deneniyor:', err);
+      }
+    }
+
     setIsPaying(true);
     setError(null);
     setTxHash(null);
@@ -414,8 +467,28 @@ export default function PaymentForm() {
           errorBody.includes("invalid_exact_evm_payload_signature") ||
           errorBody.includes("execution reverted")
         ) {
+          // Bu iki hata AKILLI CÜZDANA ÖZGÜ DEĞİL. "execution reverted",
+          // EIP-3009 transferinin herhangi bir sebeple dönmesiyle de çıkar:
+          // cüzdanda yeterli USDC olmaması, yetkilendirmenin daha önce
+          // kullanılmış olması, süresinin geçmiş olması… Sırf hata metnine
+          // bakıp "akıllı cüzdan kullanıyorsunuz, EOA'ya geçin" demek, sıradan
+          // bir MetaMask hesabıyla bakiyesi yetmeyen kullanıcıyı tamamen
+          // yanlış yere gönderiyordu.
+          //
+          // Hesabın türü tahmin edilmiyor, ZİNCİRDEN okunuyor: adreste
+          // bytecode varsa akıllı kontrat hesabıdır, yoksa EOA'dır.
+          const isSmartAccount = await publicClient
+            .getCode({ address: walletClient.account.address })
+            .then((code) => Boolean(code) && code !== '0x')
+            .catch(() => false);
+
           throw new Error(
-            t('err.smartWallet')
+            isSmartAccount
+              ? t('err.smartWallet')
+              : t('err.transferReverted', {
+                  price: tier.price,
+                  reason: decodePaymentRequiredError(response) ?? errorBody,
+                })
           );
         }
 
