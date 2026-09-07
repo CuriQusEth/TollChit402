@@ -140,6 +140,8 @@ const MESSAGES = {
       "The facilitator rejected the payment signature: it does not resolve to the paying address. Common causes: an account other than the connected one signed, the selected network is not Base, or the smart wallet account is not deployed on chain yet.",
     "err.selfSend":
       "The facilitator rejected a payment to yourself: the recipient address is the same as the paying wallet. Enter a different recipient address.",
+    "err.transferReverted":
+      "The facilitator's USDC transfer reverted on chain. Your wallet is a normal account, so this is not a signature-format problem. The usual causes: not enough USDC on Base (this package needs {price}), or the payment authorization was already used. Facilitator's reason: {reason}",
     "err.smartWallet":
       "The payment comes from a smart-contract wallet and the facilitator could not verify the signature. The EIP-3009 digest is passed straight to the account's isValidSignature function, and accounts such as Coinbase Smart Wallet expect the signature in their own wrapper format, so that call reverts. Please connect with a standard EOA wallet (a regular account in MetaMask/Rabby).",
     "err.undeployed6492":
@@ -262,6 +264,8 @@ const MESSAGES = {
       "Ödeme imzası facilitator tarafından reddedildi. İmza, ödeme yapan adrese çözümlenmiyor. Sık görülen sebepler: cüzdanda bağlı olandan başka bir hesabın imzalaması, seçili ağın Base olmaması, ya da akıllı cüzdan hesabının henüz zincire dağıtılmamış olması.",
     "err.selfSend":
       "Facilitator kendine yapılan ödemeyi reddetti: alıcı adres, ödeme yapan cüzdanla aynı. Farklı bir alıcı adresi girin.",
+    "err.transferReverted":
+      "Facilitator'ın USDC transferi zincirde revert etti. Cüzdanınız sıradan bir hesap, yani bu bir imza biçimi sorunu değil. Sık görülen sebepler: Base ağında yeterli USDC olmaması (bu paket için {price} gerekiyor) ya da ödeme yetkilendirmesinin daha önce kullanılmış olması. Facilitator'ın verdiği sebep: {reason}",
     "err.smartWallet":
       "Ödeme akıllı kontrat cüzdanından yapılıyor ve facilitator imzayı doğrulayamadı. EIP-3009 digest'i doğrudan hesabın isValidSignature fonksiyonuna veriliyor; Coinbase Smart Wallet gibi hesaplar imzayı kendi sarmalayıcı biçiminde beklediği için bu çağrı revert ediyor. Lütfen standart bir EOA cüzdanıyla (MetaMask/Rabby'de normal hesap) bağlanın.",
     "err.undeployed6492":
